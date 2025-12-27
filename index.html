@@ -915,10 +915,25 @@
                         // ... (default logic can stay)
                     }
 
-                    // Connect to Cloud
-                    if (window.initFirebase) {
-                        window.initFirebase(this);
-                    }
+                    // --- MODIFICATION POUR ATTENDRE FIREBASE ---
+                    // On crée une petite boucle qui vérifie si Firebase est arrivé
+                    let attempts = 0;
+                    const waitForFirebase = () => {
+                        if (window.initFirebase) {
+                            console.log("✅ Firebase est chargé, connexion en cours...");
+                            window.initFirebase(this);
+                        } else {
+                            // Pas encore là ? On réessaie dans 100ms (max 50 fois = 5 secondes)
+                            if (attempts < 50) {
+                                attempts++;
+                                setTimeout(waitForFirebase, 100);
+                            } else {
+                                console.error("❌ Abandon : Firebase met trop de temps à charger.");
+                            }
+                        }
+                    };
+                    waitForFirebase();
+                    // -------------------------------------------
 
                     this.forms.guest.arrival = this.today;
                     this.forms.guest.departure = ''; // Vide par défaut
@@ -1708,5 +1723,6 @@
 </body>
 
 </html>
+
 
 
