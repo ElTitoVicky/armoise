@@ -102,14 +102,7 @@
 
         <div class="bg-[#262626] rounded-2xl p-6 shadow-2xl w-[320px] border border-gray-800" x-show="showCalendar"
             x-transition.scale.origin.top>
-            <button @click="migrateData()"
-                class="w-full flex items-center justify-center rounded-lg bg-red-800 hover:bg-red-700 text-white font-bold p-2 text-xs mb-2">
-                <i class="fa-solid fa-database mr-2"></i> Migrer Données
-            </button>
-            <button @click="migrateData()"
-                class="w-full flex items-center justify-center rounded-lg bg-red-800 hover:bg-red-700 text-white font-bold p-2 text-xs mb-2">
-                <i class="fa-solid fa-database mr-2"></i> Migrer Données
-            </button>
+
             <div class="flex justify-between items-center mb-6">
                 <button @click="prevMonth()"
                     class="w-8 h-8 flex items-center justify-center rounded-lg bg-gray-800 hover:bg-gray-700 text-gray-400">
@@ -1209,11 +1202,27 @@
                     // Force refresh computed lists if needed (Alpine reactivity handles it usually)
                 },
 
-                resetData() {
-                    if (confirm('Tout effacer ?')) {
+                async resetData() {
+                    if (confirm('Tout effacer (Local + Cloud) ?')) {
+                        if (this.isOnline) {
+                            console.log("Deleting Cloud Data...");
+                            // copy arrays to avoid modification issues during iteration
+                            const guestsToDelete = [...this.guests];
+                            const absencesToDelete = [...this.absences];
+
+                            for (const g of guestsToDelete) {
+                                if (g.firestoreId) await window.dbDelete('guests', g.firestoreId);
+                            }
+                            for (const a of absencesToDelete) {
+                                if (a.firestoreId) await window.dbDelete('absences', a.firestoreId);
+                            }
+                        }
+
                         this.guests = [];
                         this.absences = [];
                         this.save();
+                        alert("Données effacées.");
+                        window.location.reload();
                     }
                 },
 
@@ -1810,109 +1819,7 @@
                     this.modals[type] = true;
                 },
 
-                async migrateData() {
-                    if (!confirm("ATTENTION: Ceci va fusionner les séjours scindés (multi-docs) en séjours uniques avec historique. Sauvegardez vos données avant. Continuer ?")) return;
 
-                    console.log("Starting Migration...");
-
-                    // 1. Group by Name
-                    const groups = {};
-                    this.guests.forEach(g => {
-                        if (!groups[g.name]) groups[g.name] = [];
-                        groups[g.name].push(g);
-                    });
-
-                    for (const name in groups) {
-                        const list = groups[name];
-                        // Sort by arrival
-                        list.sort((a, b) => a.arrival.localeCompare(b.arrival));
-
-                        // Check if they are contiguous/overlapping (part of same trip)
-                        // Simple heuristic: If gap < 2 days, merge.
-
-                        // We will build "Clusters" of stays
-                        const clusters = [];
-                        let currentCluster = [list[0]];
-
-                        for (let i = 1; i < list.length; i++) {
-                            const prev = currentCluster[currentCluster.length - 1];
-                            const curr = list[i];
-
-                            // Check link: Prev End == Curr Start OR Prev End + 1 == Curr Start
-                            const expectedNext = this.addDaysToDate(prev.departure, 1); // Split logic was -1 day for prev.
-                            // If Split: Prev ends J-1, Curr starts J. Gap is 1 day.
-                            // So if curr.arrival <= expectedNext
-
-                            // Also check if same ID (should not happen if split, but legacy)
-                            if (prev.departure && curr.arrival <= expectedNext) {
-                                currentCluster.push(curr);
-                            } else {
-                                clusters.push(currentCluster);
-                                currentCluster = [curr];
-                            }
-                        }
-                        clusters.push(currentCluster);
-
-                        // Process Clusters
-                        for (const cluster of clusters) {
-                            if (cluster.length < 2) continue; // No merge needed
-
-                            console.log("Merging cluster for " + name, cluster);
-
-                            const master = cluster[0]; // First stay becomes Master
-                            const toDelete = [];
-
-                            // Initialize Master History
-                            if (!master.roomHistory) {
-                                master.roomHistory = [{ date: master.arrival, room: master.room }];
-                            }
-
-                            // Merge others
-                            for (let i = 1; i < cluster.length; i++) {
-                                const segment = cluster[i];
-
-                                // Add move to history
-                                master.roomHistory.push({
-                                    date: segment.arrival,
-                                    room: segment.room
-                                });
-
-                                // Extend Master End Date
-                                master.departure = segment.departure;
-
-                                // Mark for delete
-                                toDelete.push(segment);
-                            }
-
-                            // Save Master
-                            if (this.isOnline && master.firestoreId) {
-                                await window.dbUpdate('guests', master.firestoreId, {
-                                    roomHistory: master.roomHistory,
-                                    departure: master.departure
-                                });
-
-                                // Re-link Absences from old IDs to Master ID
-                                for (const seg of toDelete) {
-                                    // Find absences for this segment ID
-                                    const relatedAbsences = this.absences.filter(a => a.guestId === seg.id);
-                                    for (const abs of relatedAbsences) {
-                                        if (this.isOnline && abs.firestoreId) {
-                                            await window.dbUpdate('absences', abs.firestoreId, { guestId: master.id });
-                                        }
-                                    }
-
-                                    // Delete segment
-                                    if (this.isOnline && seg.firestoreId) {
-                                        await window.dbDelete('guests', seg.firestoreId);
-                                    }
-                                }
-                            }
-                        }
-                    }
-
-                    alert("Migration terminée !");
-                    window.location.reload();
-                }
             }
         }
     </script>
