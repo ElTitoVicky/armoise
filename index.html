@@ -103,6 +103,10 @@
         <div class="bg-[#262626] rounded-2xl p-6 shadow-2xl w-[320px] border border-gray-800" x-show="showCalendar"
             x-transition.scale.origin.top>
 
+            <button @click="fixDuplicates()"
+                class="w-full flex items-center justify-center rounded-lg bg-orange-800 hover:bg-orange-700 text-white font-bold p-2 text-xs mb-2">
+                <i class="fa-solid fa-wrench mr-2"></i> Réparer Doublons
+            </button>
             <div class="flex justify-between items-center mb-6">
                 <button @click="prevMonth()"
                     class="w-8 h-8 flex items-center justify-center rounded-lg bg-gray-800 hover:bg-gray-700 text-gray-400">
