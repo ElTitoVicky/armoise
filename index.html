@@ -585,85 +585,99 @@
                                         </div>
                                     </div>
 
-                                    <!-- Segments Timeline -->
+                                    <!-- Segments Timeline (Changes style) -->
                                     <div class="space-y-3 relative pl-4 border-l border-gray-700 ml-2">
-                                        <template x-for="stay in trip.segments" :key="stay.id">
+                                        <template x-for="(stay, index) in trip.segments" :key="stay.id + index">
                                             <div class="relative pl-6">
                                                 <!-- Timeline dot -->
                                                 <div class="absolute -left-[21px] top-6 w-3 h-3 rounded-full border-2 border-[#262626]"
                                                     :class="isHere(stay, viewDate) ? 'bg-green-500' : 'bg-gray-600'">
                                                 </div>
 
-                                                <div class="bg-gray-800 p-3 rounded-lg border border-gray-700">
-                                                    <div class="flex justify-between items-center mb-1">
-                                                        <div class="font-bold text-blue-400" x-text="stay.room"></div>
+                                                <div class="bg-gray-800 p-4 rounded-lg border border-gray-700">
+
+                                                    <!-- Header: Dates & Actions -->
+                                                    <div class="flex justify-between items-start mb-2">
+                                                        <div class="text-sm text-gray-400">
+                                                            <span x-text="formatDate(stay.arrival)"></span>
+                                                            <i
+                                                                class="fa-solid fa-arrow-right mx-1 text-gray-600 text-xs"></i>
+                                                            <span x-text="formatDate(stay.departure) || 'Fin'"></span>
+                                                        </div>
+
                                                         <div class="flex gap-2">
-                                                            <button @click="editGuest(stay)"
+                                                            <button
+                                                                @click="editGuest({ ...stay, name: selectedGuestName })"
+                                                                title="Modifier ce segment"
                                                                 class="text-xs text-gray-400 hover:text-white bg-gray-700 px-2 py-1 rounded">
                                                                 <i class="fa-solid fa-pencil"></i>
                                                             </button>
+                                                            <!-- Delete only if it's a real segment we can identify distinctively, or rely on logic -->
                                                             <button
                                                                 @click="deleteGuest(stay.id); modals.profile = false"
+                                                                title="Supprimer tout le séjour"
                                                                 class="text-xs text-red-900 hover:text-red-500 hover:bg-red-900/20 px-2 py-1 rounded">
                                                                 <i class="fa-solid fa-trash"></i>
                                                             </button>
                                                         </div>
                                                     </div>
-                                                    <div class="text-sm text-gray-300 flex items-center gap-2">
-                                                        <span><i
-                                                                class="fa-solid fa-clock text-gray-500 mr-1"></i></span>
-                                                        <span x-text="formatDate(stay.arrival)"></span>
-                                                        <i class="fa-solid fa-arrow-right text-gray-600 text-xs"></i>
-                                                        <span x-text="formatDate(stay.departure) || '∞'"></span>
+
+                                                    <!-- Room Change Display Style -->
+                                                    <div
+                                                        class="flex items-center gap-3 text-sm text-gray-300 bg-gray-900/50 p-3 rounded-lg">
+                                                        <i class="fa-solid fa-bed text-gray-500"></i>
+                                                        <span x-text="stay.room"
+                                                            class="text-blue-400 font-bold text-lg"></span>
                                                     </div>
+
                                                 </div>
                                             </div>
                                         </template>
                                     </div>
-                                </div>
                             </template>
                         </div>
                     </div>
-
-                    <!-- SECTION ABSENCES A VENIR -->
-                    <div>
-                        <h4
-                            class="text-xs uppercase text-gray-500 font-bold mb-3 tracking-wider flex justify-between items-center">
-                            <span>Absences à venir</span>
-                            <button
-                                @click="modals.profile = false; forms.absence.guestId = getAllStays(selectedGuestName)[0].id; openModal('absence')"
-                                class="text-xs bg-gray-700 px-2 py-1 rounded hover:bg-gray-600 text-blue-300">
-                                + Ajouter
-                            </button>
-                        </h4>
-
-                        <div class="space-y-2">
-                            <template x-for="(abs, index) in getAllFutureAbsences(selectedGuestName)" :key="index">
-                                <div
-                                    class="bg-gray-800 p-3 rounded-lg flex justify-between items-center border-l-4 border-indigo-500">
-                                    <div>
-                                        <div class="font-bold text-sm" x-text="formatDate(abs.date)"></div>
-                                        <div class="text-xs text-gray-400 mt-1">
-                                            <span x-show="abs.isMidi" class="mr-2">Midi</span>
-                                            <span x-show="abs.isSoir">Soir</span>
-                                            <span x-show="abs.reason" class="block text-indigo-300 italic mt-0.5"
-                                                x-text="abs.reason"></span>
-                                        </div>
-                                    </div>
-                                    <button @click="deleteAbsenceByRef(abs)" class="text-red-400 hover:text-white p-2">
-                                        <i class="fa-solid fa-trash"></i>
-                                    </button>
-                                </div>
-                            </template>
-                            <div x-show="getAllFutureAbsences(selectedGuestName).length === 0"
-                                class="text-gray-500 text-sm italic py-2">
-                                Aucune absence prévue.
-                            </div>
-                        </div>
-                    </div>
-                </div>
             </template>
         </div>
+    </div>
+
+    <!-- SECTION ABSENCES A VENIR -->
+    <div>
+        <h4 class="text-xs uppercase text-gray-500 font-bold mb-3 tracking-wider flex justify-between items-center">
+            <span>Absences à venir</span>
+            <button
+                @click="modals.profile = false; forms.absence.guestId = getAllStays(selectedGuestName)[0].id; openModal('absence')"
+                class="text-xs bg-gray-700 px-2 py-1 rounded hover:bg-gray-600 text-blue-300">
+                + Ajouter
+            </button>
+        </h4>
+
+        <div class="space-y-2">
+            <template x-for="(abs, index) in getAllFutureAbsences(selectedGuestName)" :key="index">
+                <div class="bg-gray-800 p-3 rounded-lg flex justify-between items-center border-l-4 border-indigo-500">
+                    <div>
+                        <div class="font-bold text-sm" x-text="formatDate(abs.date)"></div>
+                        <div class="text-xs text-gray-400 mt-1">
+                            <span x-show="abs.isMidi" class="mr-2">Midi</span>
+                            <span x-show="abs.isSoir">Soir</span>
+                            <span x-show="abs.reason" class="block text-indigo-300 italic mt-0.5"
+                                x-text="abs.reason"></span>
+                        </div>
+                    </div>
+                    <button @click="deleteAbsenceByRef(abs)" class="text-red-400 hover:text-white p-2">
+                        <i class="fa-solid fa-trash"></i>
+                    </button>
+                </div>
+            </template>
+            <div x-show="getAllFutureAbsences(selectedGuestName).length === 0"
+                class="text-gray-500 text-sm italic py-2">
+                Aucune absence prévue.
+            </div>
+        </div>
+    </div>
+    </div>
+    </template>
+    </div>
     </div>
 
     <div x-show="modals.absence" class="fixed inset-0 bg-black/80 z-50 flex items-center justify-center p-4"
