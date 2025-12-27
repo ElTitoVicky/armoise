@@ -1306,7 +1306,9 @@
                     // Jours du mois
                     for (let i = 1; i <= lastDay.getDate(); i++) {
                         const d = new Date(year, month, i);
-                        const dateStr = d.toISOString().split('T')[0];
+                        // FIX: Use manual formatting to avoid Timezone offset unique to toISOString (which uses UTC)
+                        // This prevents J+1 or J-1 errors based on user timezone.
+                        const dateStr = [year, String(month + 1).padStart(2, '0'), String(i).padStart(2, '0')].join('-');
                         days.push({
                             empty: false,
                             day: i,
