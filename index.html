@@ -102,7 +102,14 @@
 
         <div class="bg-[#262626] rounded-2xl p-6 shadow-2xl w-[320px] border border-gray-800" x-show="showCalendar"
             x-transition.scale.origin.top>
-            <!-- Header Mois/Année + Nav -->
+            <button @click="migrateData()"
+                class="w-full flex items-center justify-center rounded-lg bg-red-800 hover:bg-red-700 text-white font-bold p-2 text-xs mb-2">
+                <i class="fa-solid fa-database mr-2"></i> Migrer Données
+            </button>
+            <button @click="migrateData()"
+                class="w-full flex items-center justify-center rounded-lg bg-red-800 hover:bg-red-700 text-white font-bold p-2 text-xs mb-2">
+                <i class="fa-solid fa-database mr-2"></i> Migrer Données
+            </button>
             <div class="flex justify-between items-center mb-6">
                 <button @click="prevMonth()"
                     class="w-8 h-8 flex items-center justify-center rounded-lg bg-gray-800 hover:bg-gray-700 text-gray-400">
@@ -1141,37 +1148,53 @@
                     if (!guest) return;
 
                     if (type === 'correction') {
-                        // Changement simple de chambre
-                        guest.room = toRoom;
+                        // Changement simple de chambre (historique ou actuel)
+                        // On doit trouver l'entrée d'historique active à cette date et la modifier
+                        const historyEntry = this.getHistoryEntryAtDate(guest, this.viewDate);
 
-                        if (this.isOnline && guest.firestoreId) {
-                            await window.dbUpdate('guests', guest.firestoreId, { room: toRoom });
+                        if (historyEntry) {
+                            historyEntry.room = toRoom; // Modif locale ref
+
+                            // Propager au backend (Update tout l'array history)
+                            if (this.isOnline && guest.firestoreId) {
+                                await window.dbUpdate('guests', guest.firestoreId, { roomHistory: guest.roomHistory });
+                            } else {
+                                this.save();
+                            }
                         } else {
-                            this.save();
+                            // Fallback legacy (pas d'historique)
+                            guest.room = toRoom;
+                            if (this.isOnline && guest.firestoreId) {
+                                await window.dbUpdate('guests', guest.firestoreId, { room: toRoom });
+                            } else {
+                                this.save();
+                            }
                         }
 
                     } else if (type === 'split') {
-                        // Split du séjour
-                        // 1. Clôturer l'ancien séjour hier
-                        const yesterday = this.addDaysToDate(this.viewDate, -1);
+                        // NEW LOGIC: Room Change => Add to history
+                        // On ajoute une nouvelle entrée dans l'historique à partir de viewDate
 
-                        // Créer le nouveau séjour à partir d'aujourd'hui
-                        // Utiliser une copie propre pour éviter les problèmes de Proxy
-                        const newGuest = JSON.parse(JSON.stringify(guest));
+                        // 1. Initialiser l'historique si absent (Migration à la volée)
+                        if (!guest.roomHistory) {
+                            guest.roomHistory = [{ date: guest.arrival, room: guest.room }];
+                        }
 
-                        newGuest.id = Date.now() + Math.floor(Math.random() * 1000); // ID unique robuste
-                        newGuest.arrival = this.viewDate; // Arrive aujourd'hui
-                        newGuest.room = toRoom;
-                        newGuest.departure = guest.departure; // Garde la fin originale
-
-                        // Mettre à jour l'ancien pour finir hier
-                        guest.departure = yesterday;
-
-                        if (this.isOnline && guest.firestoreId) {
-                            await window.dbUpdate('guests', guest.firestoreId, { departure: yesterday });
-                            await window.dbAdd('guests', newGuest);
+                        // 2. Vérifier s'il y a déjà un mouvement ce jour là
+                        const existingToday = guest.roomHistory.find(h => h.date === this.viewDate);
+                        if (existingToday) {
+                            existingToday.room = toRoom;
                         } else {
-                            this.guests.push(newGuest);
+                            guest.roomHistory.push({ date: this.viewDate, room: toRoom });
+                        }
+
+                        // 3. Trier par date
+                        guest.roomHistory.sort((a, b) => a.date.localeCompare(b.date));
+
+                        // 4. Save
+                        if (this.isOnline && guest.firestoreId) {
+                            await window.dbUpdate('guests', guest.firestoreId, { roomHistory: guest.roomHistory });
+                        } else {
                             this.save();
                         }
                     }
@@ -1305,10 +1328,22 @@
                     } else {
                         // MODE CREATION
                         // Handle Couple Splitting
+                        // Handle Couple Splitting
                         if (this.forms.guest.isCouple && this.forms.guest.name2) {
                             // Create 2 Guests
-                            const g1 = { ...guestData, beds: 1 };
-                            const g2 = { ...guestData, id: Date.now() + 1, name: this.forms.guest.name2, name2: '', beds: 1 };
+                            const g1 = {
+                                ...guestData,
+                                beds: 1,
+                                roomHistory: [{ date: guestData.arrival, room: guestData.room }]
+                            };
+                            const g2 = {
+                                ...guestData,
+                                id: Date.now() + 1,
+                                name: this.forms.guest.name2,
+                                name2: '',
+                                beds: 1,
+                                roomHistory: [{ date: guestData.arrival, room: guestData.room }]
+                            };
 
                             if (this.isOnline) {
                                 await window.dbAdd('guests', g1);
@@ -1320,6 +1355,8 @@
                             }
                         } else {
                             // Create 1 Guest
+                            guestData.roomHistory = [{ date: guestData.arrival, room: guestData.room }];
+
                             if (this.isOnline) {
                                 await window.dbAdd('guests', guestData);
                             } else {
@@ -1369,25 +1406,19 @@
                         this.save(); // Local fallback
                     }
 
-                    // Also delete linked absences?
-                    // Complex with Firestore query limitations without index. 
-                    // Let's leave orphans or client-side filter for now.
-                    // Or iterate local absences and delete them too?
-                    // Better validation:
+                    // For Single Doc model: linked absences are simple to delete since ID doesn't change
+                    // But we still need to delete them. 
+
                     const relatedAbsences = this.absences.filter(a => a.guestId === id);
                     for (const abs of relatedAbsences) {
                         if (this.isOnline && abs.firestoreId) {
                             await window.dbDelete('absences', abs.firestoreId);
                         } else {
-                            // Local delete in next loop or filter
+                            // Local delete handled below
                         }
                     }
 
-                    // Always clean up local state immediately for responsiveness
-                    if (this.isOnline) {
-                        // Firestore subscription will update list, but we can optimistically remove?
-                        // No, rely on Snapshot for single source of truth to avoid de-sync
-                    } else {
+                    if (!this.isOnline) {
                         this.absences = this.absences.filter(a => a.guestId !== id);
                         this.save();
                     }
@@ -1433,41 +1464,46 @@
                 },
 
                 getGuestTrips(name) {
-                    const rawStays = this.getAllStays(name);
-                    const trips = [];
+                    // NEW LOGIC: One guest doc = One trip (mostly).
+                    // But we might have multiple guests with same name ? (Unlikely if unique, but possible if recurring).
+                    // Current App Logic: "guests" list contains disjoint stays.
+                    // If we migrated, "guests" contains Single Stays with history.
 
-                    if (rawStays.length === 0) return trips;
+                    // So we just return the guest objects matching the name, enriched with their history segments logic if needed for UI.
+                    // The UI expects: { start, end, segments: [ {id, room, arrival, departure} ] }
 
-                    let currentTrip = {
-                        start: rawStays[0].arrival,
-                        end: rawStays[0].departure,
-                        segments: [rawStays[0]]
-                    };
+                    const matches = this.guests.filter(g => g.name === name).sort((a, b) => a.arrival.localeCompare(b.arrival));
 
-                    for (let i = 1; i < rawStays.length; i++) {
-                        const segment = rawStays[i];
-                        const prev = currentTrip.segments[currentTrip.segments.length - 1];
+                    return matches.map(guest => {
+                        // Construire les segments basés sur l'historique
+                        const segments = [];
 
-                        // Check if contiguous (Prev Departure + 1 day == Next Arrival OR Prev Departure == Next Arrival if we allow same day swap logic change?)
-                        // Current logic: Split sets departure=yesterday, arrival=today. Gap is 1 day.
-                        const expectedArrival = this.addDaysToDate(prev.departure, 1);
-
-                        if (prev.departure && segment.arrival <= expectedArrival) {
-                            // C'est le même séjour (suite)
-                            currentTrip.segments.push(segment);
-                            currentTrip.end = segment.departure; // Update global end
+                        if (guest.roomHistory && guest.roomHistory.length > 0) {
+                            guest.roomHistory.forEach((h, i) => {
+                                const nextH = guest.roomHistory[i + 1];
+                                segments.push({
+                                    id: guest.id, // Same ID everywhere now!
+                                    room: h.room,
+                                    arrival: h.date,
+                                    departure: nextH ? nextH.date : guest.departure // Until next move OR end of stay
+                                });
+                            });
                         } else {
-                            // C'est un nouveau séjour
-                            trips.push(currentTrip);
-                            currentTrip = {
-                                start: segment.arrival,
-                                end: segment.departure,
-                                segments: [segment]
-                            };
+                            // Legacy fallback
+                            segments.push({
+                                id: guest.id,
+                                room: guest.room,
+                                arrival: guest.arrival,
+                                departure: guest.departure
+                            });
                         }
-                    }
-                    trips.push(currentTrip);
-                    return trips;
+
+                        return {
+                            start: guest.arrival,
+                            end: guest.departure,
+                            segments: segments
+                        };
+                    });
                 },
 
                 getAllFutureAbsences(name) {
@@ -1564,94 +1600,94 @@
                 // Identification des changements de chambre internes
                 getInternalMoves() {
                     const moves = [];
-                    // Pour chaque guest, on cherche s'il y a un autre guest (même nom)
-                    // dont l'arrivée correspond à mon départ + 1 jour (ou le jour même selon la logique de split)
-                    // Dans notre logique split: nouveau arrive le jour J, ancien part le jour J-1.
-                    // Donc New.Arrival = Old.Departure + 1 jour.
+                    // NEW LOGIC: Iterer sur les guests et checker leur roomHistory
+                    this.guests.forEach(g => {
+                        if (g.roomHistory && g.roomHistory.length > 1) {
+                            // On regarde tous les changements HISTORIQUES
+                            // Entry 0 = Arrival room. Entry 1+ = Moves.
+                            for (let i = 1; i < g.roomHistory.length; i++) {
+                                const entry = g.roomHistory[i];
+                                const prevEntry = g.roomHistory[i - 1];
 
-                    this.guests.forEach(g1 => {
-                        if (!g1.departure) return; // Pas de départ, pas de move possible depuis lui
-
-                        // Chercher le "suite" du séjour
-                        const nextStay = this.guests.find(g2 =>
-                            g2.id !== g1.id &&
-                            g2.name === g1.name &&
-                            g2.arrival === this.addDaysToDate(g1.departure, 1) // Arrive le lendemain du départ
-                        );
-
-                        if (nextStay) {
-                            moves.push({
-                                guest: nextStay, // On track le nouveau segment
-                                date: nextStay.arrival,
-                                fromRoom: g1.room,
-                                toRoom: nextStay.room
-                            });
+                                // Si c'est pertinent (futur ou présent)
+                                if (entry.date >= this.today) {
+                                    moves.push({
+                                        guest: g,
+                                        date: entry.date,
+                                        fromRoom: prevEntry.room,
+                                        toRoom: entry.room
+                                    });
+                                }
+                            }
                         }
                     });
 
-                    return moves
-                        .filter(m => m.date >= this.today)
-                        .sort((a, b) => a.date.localeCompare(b.date));
+                    return moves.sort((a, b) => a.date.localeCompare(b.date));
                 },
 
                 async cancelMove(move) {
-                    if (!confirm('Voulez-vous vraiment annuler ce changement et remettre la personne dans la chambre initiale ?')) return;
+                    if (!confirm('Annuler ce changement et remettre dans la chambre précédente ?')) return;
 
-                    const nextStay = move.guest; // Le segment "destination" à supprimer
+                    const guest = move.guest;
+                    const dateToCancel = move.date;
 
-                    // Trouver le segment précédent (source)
-                    // Il part la veille de l'arrivée du suivant (ou le jour même selon la logique)
-                    // Logique split: arrival du next = departure du prev + 1 jour.
-                    // Donc Departure du prev = arrival du next - 1 jour.
-                    const prevStayDeparture = this.addDaysToDate(nextStay.arrival, -1);
+                    // On doit trouver l'entrée d'historique correspondant exactement à cette date
+                    if (!guest.roomHistory) return;
 
-                    const prevStay = this.guests.find(g =>
-                        g.id !== nextStay.id &&
-                        g.name === nextStay.name &&
-                        g.departure === prevStayDeparture
-                    );
+                    const index = guest.roomHistory.findIndex(h => h.date === dateToCancel);
+                    if (index > -1) {
+                        // On supprime l'entrée. La chambre redeviendra celle de l'entrée précédente dans la liste.
+                        guest.roomHistory.splice(index, 1);
 
-
-                    if (prevStay) {
-                        // 1. Étendre le séjour précédent
-                        // prevStay.departure = nextStay.departure; // Il reprend la fin du séjour
-
-                        if (this.isOnline && prevStay.firestoreId) {
-                            await window.dbUpdate('guests', prevStay.firestoreId, { departure: nextStay.departure });
+                        if (this.isOnline && guest.firestoreId) {
+                            await window.dbUpdate('guests', guest.firestoreId, { roomHistory: guest.roomHistory });
                         } else {
-                            prevStay.departure = nextStay.departure;
-                        }
-
-
-                        // 2. Migrer les absences (Not easily possible with simple Update if not indexed, but let's try)
-                        // This part is tricky online without real backend logic.
-                        // We skip migration online for now or do it mostly manual?
-                        // Let's do client-side migration locally, but in Firestore we iterate.
-                        this.absences.forEach(async a => {
-                            if (a.guestId === nextStay.id) {
-                                if (this.isOnline && a.firestoreId) {
-                                    await window.dbUpdate('absences', a.firestoreId, { guestId: prevStay.id });
-                                } else {
-                                    a.guestId = prevStay.id;
-                                }
-                            }
-                        });
-
-                        // 3. Supprimer le segment "next"
-                        if (this.isOnline && nextStay.firestoreId) {
-                            await window.dbDelete('guests', nextStay.firestoreId);
-                        } else {
-                            this.guests = this.guests.filter(g => g.id !== nextStay.id);
                             this.save();
                         }
-                    } else {
-                        alert("Impossible de retrouver le séjour précédent automatiquement.");
                     }
+                },
+
+                // --- HELPERS ROOM HISTORY ---
+                getGuestRoom(guest, dateStr) {
+                    // Si pas d'historique, fallback legacy
+                    if (!guest.roomHistory || guest.roomHistory.length === 0) return guest.room;
+
+                    // Trouver la dernière entrée dont la date <= dateStr
+                    // Array is sorted by date asc
+                    let currentRoom = guest.room; // fallback initial (souvent sync avec history[0])
+
+                    for (const entry of guest.roomHistory) {
+                        if (entry.date <= dateStr) {
+                            currentRoom = entry.room;
+                        } else {
+                            // On a dépassé la date, on s'arrête
+                            break;
+                        }
+                    }
+                    return currentRoom;
+                },
+
+                getHistoryEntryAtDate(guest, dateStr) {
+                    if (!guest.roomHistory) return null;
+                    let bestEntry = null;
+                    for (const entry of guest.roomHistory) {
+                        if (entry.date <= dateStr) {
+                            bestEntry = entry;
+                        } else {
+                            break;
+                        }
+                    }
+                    return bestEntry;
                 },
 
                 // Retourne la liste des gens présents à une date donnée (Mange ou pas)
                 getPresentGuests(dateStr = this.viewDate) {
-                    return this.guests.filter(g => this.isHere(g, dateStr));
+                    return this.guests
+                        .filter(g => this.isHere(g, dateStr))
+                        .map(g => {
+                            const currentRoom = this.getGuestRoom(g, dateStr);
+                            return { ...g, room: currentRoom }; // Shallow copy avec room à jour pour la vue
+                        });
                 },
 
                 getGuestsInRoom(roomName) {
@@ -1772,6 +1808,110 @@
                 openModal(type) {
                     if (type === 'mealGuest') this.resetMealGuestForm();
                     this.modals[type] = true;
+                },
+
+                async migrateData() {
+                    if (!confirm("ATTENTION: Ceci va fusionner les séjours scindés (multi-docs) en séjours uniques avec historique. Sauvegardez vos données avant. Continuer ?")) return;
+
+                    console.log("Starting Migration...");
+
+                    // 1. Group by Name
+                    const groups = {};
+                    this.guests.forEach(g => {
+                        if (!groups[g.name]) groups[g.name] = [];
+                        groups[g.name].push(g);
+                    });
+
+                    for (const name in groups) {
+                        const list = groups[name];
+                        // Sort by arrival
+                        list.sort((a, b) => a.arrival.localeCompare(b.arrival));
+
+                        // Check if they are contiguous/overlapping (part of same trip)
+                        // Simple heuristic: If gap < 2 days, merge.
+
+                        // We will build "Clusters" of stays
+                        const clusters = [];
+                        let currentCluster = [list[0]];
+
+                        for (let i = 1; i < list.length; i++) {
+                            const prev = currentCluster[currentCluster.length - 1];
+                            const curr = list[i];
+
+                            // Check link: Prev End == Curr Start OR Prev End + 1 == Curr Start
+                            const expectedNext = this.addDaysToDate(prev.departure, 1); // Split logic was -1 day for prev.
+                            // If Split: Prev ends J-1, Curr starts J. Gap is 1 day.
+                            // So if curr.arrival <= expectedNext
+
+                            // Also check if same ID (should not happen if split, but legacy)
+                            if (prev.departure && curr.arrival <= expectedNext) {
+                                currentCluster.push(curr);
+                            } else {
+                                clusters.push(currentCluster);
+                                currentCluster = [curr];
+                            }
+                        }
+                        clusters.push(currentCluster);
+
+                        // Process Clusters
+                        for (const cluster of clusters) {
+                            if (cluster.length < 2) continue; // No merge needed
+
+                            console.log("Merging cluster for " + name, cluster);
+
+                            const master = cluster[0]; // First stay becomes Master
+                            const toDelete = [];
+
+                            // Initialize Master History
+                            if (!master.roomHistory) {
+                                master.roomHistory = [{ date: master.arrival, room: master.room }];
+                            }
+
+                            // Merge others
+                            for (let i = 1; i < cluster.length; i++) {
+                                const segment = cluster[i];
+
+                                // Add move to history
+                                master.roomHistory.push({
+                                    date: segment.arrival,
+                                    room: segment.room
+                                });
+
+                                // Extend Master End Date
+                                master.departure = segment.departure;
+
+                                // Mark for delete
+                                toDelete.push(segment);
+                            }
+
+                            // Save Master
+                            if (this.isOnline && master.firestoreId) {
+                                await window.dbUpdate('guests', master.firestoreId, {
+                                    roomHistory: master.roomHistory,
+                                    departure: master.departure
+                                });
+
+                                // Re-link Absences from old IDs to Master ID
+                                for (const seg of toDelete) {
+                                    // Find absences for this segment ID
+                                    const relatedAbsences = this.absences.filter(a => a.guestId === seg.id);
+                                    for (const abs of relatedAbsences) {
+                                        if (this.isOnline && abs.firestoreId) {
+                                            await window.dbUpdate('absences', abs.firestoreId, { guestId: master.id });
+                                        }
+                                    }
+
+                                    // Delete segment
+                                    if (this.isOnline && seg.firestoreId) {
+                                        await window.dbDelete('guests', seg.firestoreId);
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    alert("Migration terminée !");
+                    window.location.reload();
                 }
             }
         }
