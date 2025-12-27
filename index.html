@@ -103,10 +103,6 @@
         <div class="bg-[#262626] rounded-2xl p-6 shadow-2xl w-[320px] border border-gray-800" x-show="showCalendar"
             x-transition.scale.origin.top>
 
-            <button @click="fixDuplicates()"
-                class="w-full flex items-center justify-center rounded-lg bg-orange-800 hover:bg-orange-700 text-white font-bold p-2 text-xs mb-2">
-                <i class="fa-solid fa-wrench mr-2"></i> Réparer Doublons
-            </button>
             <div class="flex justify-between items-center mb-6">
                 <button @click="prevMonth()"
                     class="w-8 h-8 flex items-center justify-center rounded-lg bg-gray-800 hover:bg-gray-700 text-gray-400">
@@ -1477,46 +1473,100 @@
                 },
 
                 getGuestTrips(name) {
-                    // NEW LOGIC: One guest doc = One trip (mostly).
-                    // But we might have multiple guests with same name ? (Unlikely if unique, but possible if recurring).
-                    // Current App Logic: "guests" list contains disjoint stays.
-                    // If we migrated, "guests" contains Single Stays with history.
+                    // 1. Collect all raw segments from all matching docs
+                    const matches = this.guests.filter(g => g.name === name);
+                    if (matches.length === 0) return [];
 
-                    // So we just return the guest objects matching the name, enriched with their history segments logic if needed for UI.
-                    // The UI expects: { start, end, segments: [ {id, room, arrival, departure} ] }
+                    let rawSegments = [];
 
-                    const matches = this.guests.filter(g => g.name === name).sort((a, b) => a.arrival.localeCompare(b.arrival));
-
-                    return matches.map(guest => {
-                        // Construire les segments basés sur l'historique
-                        const segments = [];
-
-                        if (guest.roomHistory && guest.roomHistory.length > 0) {
-                            guest.roomHistory.forEach((h, i) => {
-                                const nextH = guest.roomHistory[i + 1];
-                                segments.push({
-                                    id: guest.id, // Same ID everywhere now!
+                    matches.forEach(g => {
+                        if (g.roomHistory && g.roomHistory.length > 0) {
+                            // History-based segments
+                            g.roomHistory.forEach((h, i) => {
+                                const nextH = g.roomHistory[i + 1];
+                                rawSegments.push({
+                                    id: g.id,
                                     room: h.room,
                                     arrival: h.date,
-                                    departure: nextH ? nextH.date : guest.departure // Until next move OR end of stay
+                                    // If next history exists, use it. Else use doc departure.
+                                    departure: nextH ? nextH.date : (g.departure || '9999-12-31')
                                 });
                             });
                         } else {
-                            // Legacy fallback
-                            segments.push({
-                                id: guest.id,
-                                room: guest.room,
-                                arrival: guest.arrival,
-                                departure: guest.departure
+                            // Legacy single segment
+                            rawSegments.push({
+                                id: g.id,
+                                room: g.room,
+                                arrival: g.arrival,
+                                departure: g.departure || '9999-12-31'
                             });
                         }
-
-                        return {
-                            start: guest.arrival,
-                            end: guest.departure,
-                            segments: segments
-                        };
                     });
+
+                    // 2. Sort by Arrival
+                    rawSegments.sort((a, b) => a.arrival.localeCompare(b.arrival));
+
+                    // 3. Merge Logic (Winner Takes All / Cutting Overlaps)
+                    const trips = [];
+                    if (rawSegments.length === 0) return trips;
+
+                    let currentTrip = {
+                        start: rawSegments[0].arrival,
+                        segments: []
+                    };
+
+                    let currentSegment = { ...rawSegments[0] };
+
+                    for (let i = 1; i < rawSegments.length; i++) {
+                        const nextSeg = rawSegments[i];
+
+                        // Check for Gap > 1 day (strict gap, not just adjacent)
+                        // If current end is '9999', it covers everything, so check if next start is way after?
+                        // Actually, if overlap, we cut. If gap, we split trips.
+
+                        // "Contiguous" means next.arrival <= current.departure + 1 day buffer maybe?
+                        // Let's use simple logic: if next starts AFTER current ends, it's a gap.
+
+                        if (nextSeg.arrival > currentSegment.departure) {
+                            // GAP -> Finish Segment, Finish Trip
+                            currentTrip.segments.push(currentSegment);
+                            currentTrip.end = currentSegment.departure;
+                            trips.push(currentTrip);
+
+                            // Start New Trip
+                            currentTrip = {
+                                start: nextSeg.arrival,
+                                segments: []
+                            };
+                            currentSegment = { ...nextSeg };
+                        } else {
+                            // OVERLAP or CONTIGUOUS
+                            // The next segment starts BEFORE current ends.
+                            // So we CUT current segment at next.arrival
+                            currentSegment.departure = nextSeg.arrival;
+
+                            // Push current (cut) segment
+                            currentTrip.segments.push(currentSegment);
+
+                            // Start new current segment (the next one)
+                            currentSegment = { ...nextSeg };
+                        }
+                    }
+
+                    // Push final segment
+                    currentTrip.segments.push(currentSegment);
+                    currentTrip.end = currentSegment.departure;
+                    trips.push(currentTrip);
+
+                    // Cleanup '9999' dates for display
+                    trips.forEach(t => {
+                        if (t.end === '9999-12-31') t.end = null;
+                        t.segments.forEach(s => {
+                            if (s.departure === '9999-12-31') s.departure = null;
+                        });
+                    });
+
+                    return trips;
                 },
 
                 getAllFutureAbsences(name) {
@@ -1695,12 +1745,24 @@
 
                 // Retourne la liste des gens présents à une date donnée (Mange ou pas)
                 getPresentGuests(dateStr = this.viewDate) {
-                    return this.guests
-                        .filter(g => this.isHere(g, dateStr))
-                        .map(g => {
-                            const currentRoom = this.getGuestRoom(g, dateStr);
-                            return { ...g, room: currentRoom }; // Shallow copy avec room à jour pour la vue
-                        });
+                    const present = this.guests.filter(g => this.isHere(g, dateStr));
+                    const unique = {};
+
+                    present.forEach(g => {
+                        const currentRoom = this.getGuestRoom(g, dateStr);
+                        const resolvedGuest = { ...g, room: currentRoom };
+
+                        if (!unique[g.name]) {
+                            unique[g.name] = resolvedGuest;
+                        } else {
+                            // Deduplication strategy: Latest Arrival wins (Most recent booking segment)
+                            if (g.arrival > unique[g.name].arrival) {
+                                unique[g.name] = resolvedGuest;
+                            }
+                        }
+                    });
+
+                    return Object.values(unique);
                 },
 
                 getGuestsInRoom(roomName) {
