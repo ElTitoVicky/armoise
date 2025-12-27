@@ -282,7 +282,7 @@
                                         <!-- We stop propagation on button to prevent drag start when clicking delete (though delete needs confirm so it's tricky) -->
                                         <!-- Better: Sortable handle option OR ignore delete button class. Sortable ignores inputs by default. -->
                                         <button @click.stop="deleteGuest(guest.id)"
-                                            class="text-red-400 hover:text-red-200 ml-0.5 pointer-events-auto on-top">×</button>
+                                            class="text-red-400 hover:text-red-200 ml-0.5 pointer-events-auto on-top js-delete-btn">×</button>
                                     </div>
                                 </template>
                                 <div x-show="getGuestsInRoom(room.name).length === 0"
@@ -833,12 +833,7 @@
         window.dbAdd = async (coll, data) => addDoc(collection(db, coll), data);
 
         // Update needs to query by our internal ID if we don't save docID logic perfectly yet
-        window.dbUpdate = async (coll, internalId, data) => {
-            const q = query(collection(db, coll), orderBy('id')); // Simple query? No, filter
-            // We need to find the doc where 'id' == internalId
-            // Since we can't 'where' easily without importing it, let's fix imports above?
-            // Imports are there: query, orderBy. need 'where'.
-        };
+
         // Let's rely on saving the Firestore ID in the object locally!
         // When we load from snapshot, we do: guests.push({ firestoreId: doc.id, ...doc.data() });
         // So we can use that firestoreId to update.
@@ -1094,6 +1089,7 @@
                     containers.forEach(container => {
                         new Sortable(container, {
                             group: 'rooms', // Permet le drag entre listes
+                            filter: '.js-delete-btn', // Ignore le bouton delete (cliquable)
                             animation: 150,
                             ghostClass: 'bg-yellow-500/50',
                             onEnd: (evt) => {
@@ -1361,7 +1357,13 @@
                     if (!guest) return;
 
                     if (this.isOnline && guest.firestoreId) {
-                        await window.dbDelete('guests', guest.firestoreId);
+                        try {
+                            await window.dbDelete('guests', guest.firestoreId);
+                        } catch (e) {
+                            console.error(e);
+                            alert("Erreur lors de la suppression : " + e.message);
+                            return;
+                        }
                     } else {
                         this.guests = this.guests.filter(g => g.id !== id);
                         this.save(); // Local fallback
@@ -1380,7 +1382,12 @@
                             // Local delete in next loop or filter
                         }
                     }
-                    if (!this.isOnline) {
+
+                    // Always clean up local state immediately for responsiveness
+                    if (this.isOnline) {
+                        // Firestore subscription will update list, but we can optimistically remove?
+                        // No, rely on Snapshot for single source of truth to avoid de-sync
+                    } else {
                         this.absences = this.absences.filter(a => a.guestId !== id);
                         this.save();
                     }
@@ -1391,9 +1398,16 @@
                 // GESTION ABSENCES
 
 
-                deleteAbsence(index) {
-                    this.absences.splice(index, 1);
-                    this.save();
+                async deleteAbsence(index) {
+                    const abs = this.absences[index];
+                    if (!abs) return;
+
+                    if (this.isOnline && abs.firestoreId) {
+                        await window.dbDelete('absences', abs.firestoreId);
+                    } else {
+                        this.absences.splice(index, 1);
+                        this.save();
+                    }
                 },
 
                 deleteAbsenceByRef(absRef) {
@@ -1512,14 +1526,38 @@
                     if (index > -1) {
                         // Si c'est une absence "mixte" (midi ET soir), on ne supprime que le flag, sauf si c'est le dernier
                         const abs = this.absences[index];
-                        if (abs.isMidi && abs.isSoir) {
-                            if (type === 'midi') abs.isMidi = false;
-                            if (type === 'soir') abs.isSoir = false;
+                        const wasMidi = abs.isMidi;
+                        const wasSoir = abs.isSoir;
+
+                        let shouldDelete = false;
+                        let updates = {};
+
+                        if (wasMidi && wasSoir) {
+                            if (type === 'midi') updates.isMidi = false;
+                            if (type === 'soir') updates.isSoir = false;
                         } else {
                             // Suppression complète si c'était le seul flag
-                            this.absences.splice(index, 1);
+                            shouldDelete = true;
                         }
-                        this.save();
+
+                        if (shouldDelete) {
+                            if (this.isOnline && abs.firestoreId) {
+                                window.dbDelete('absences', abs.firestoreId);
+                            } else {
+                                this.absences.splice(index, 1);
+                                this.save();
+                            }
+                        } else {
+                            // Partial update
+                            if (this.isOnline && abs.firestoreId) {
+                                window.dbUpdate('absences', abs.firestoreId, updates);
+                            } else {
+                                if (updates.isMidi !== undefined) abs.isMidi = updates.isMidi;
+                                if (updates.isSoir !== undefined) abs.isSoir = updates.isSoir;
+                                this.save();
+                            }
+                        }
+
                     }
                 },
 
@@ -1556,7 +1594,7 @@
                         .sort((a, b) => a.date.localeCompare(b.date));
                 },
 
-                cancelMove(move) {
+                async cancelMove(move) {
                     if (!confirm('Voulez-vous vraiment annuler ce changement et remettre la personne dans la chambre initiale ?')) return;
 
                     const nextStay = move.guest; // Le segment "destination" à supprimer
@@ -1573,21 +1611,39 @@
                         g.departure === prevStayDeparture
                     );
 
+
                     if (prevStay) {
                         // 1. Étendre le séjour précédent
-                        prevStay.departure = nextStay.departure; // Il reprend la fin du séjour
+                        // prevStay.departure = nextStay.departure; // Il reprend la fin du séjour
 
-                        // 2. Migrer les absences
-                        this.absences.forEach(a => {
+                        if (this.isOnline && prevStay.firestoreId) {
+                            await window.dbUpdate('guests', prevStay.firestoreId, { departure: nextStay.departure });
+                        } else {
+                            prevStay.departure = nextStay.departure;
+                        }
+
+
+                        // 2. Migrer les absences (Not easily possible with simple Update if not indexed, but let's try)
+                        // This part is tricky online without real backend logic.
+                        // We skip migration online for now or do it mostly manual?
+                        // Let's do client-side migration locally, but in Firestore we iterate.
+                        this.absences.forEach(async a => {
                             if (a.guestId === nextStay.id) {
-                                a.guestId = prevStay.id;
+                                if (this.isOnline && a.firestoreId) {
+                                    await window.dbUpdate('absences', a.firestoreId, { guestId: prevStay.id });
+                                } else {
+                                    a.guestId = prevStay.id;
+                                }
                             }
                         });
 
                         // 3. Supprimer le segment "next"
-                        this.guests = this.guests.filter(g => g.id !== nextStay.id);
-
-                        this.save();
+                        if (this.isOnline && nextStay.firestoreId) {
+                            await window.dbDelete('guests', nextStay.firestoreId);
+                        } else {
+                            this.guests = this.guests.filter(g => g.id !== nextStay.id);
+                            this.save();
+                        }
                     } else {
                         alert("Impossible de retrouver le séjour précédent automatiquement.");
                     }
@@ -1723,6 +1779,3 @@
 </body>
 
 </html>
-
-
-
