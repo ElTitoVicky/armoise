@@ -617,12 +617,7 @@
                                                         </div>
 
                                                         <div class="flex gap-2">
-                                                            <button
-                                                                @click="editGuest({ ...stay, name: selectedGuestName })"
-                                                                title="Modifier ce segment"
-                                                                class="text-xs text-gray-400 hover:text-white bg-gray-700 px-2 py-1 rounded">
-                                                                <i class="fa-solid fa-pencil"></i>
-                                                            </button>
+
 
                                                             <!-- Smart Delete: Only if > 1 segment -->
                                                             <button x-show="trip.segments.length > 1"
@@ -649,47 +644,46 @@
                             </template>
                         </div>
                     </div>
-            </template>
-        </div>
-    </div>
 
-    <!-- SECTION ABSENCES A VENIR -->
-    <div>
-        <h4 class="text-xs uppercase text-gray-500 font-bold mb-3 tracking-wider flex justify-between items-center">
-            <span>Absences à venir</span>
-            <button
-                @click="modals.profile = false; forms.absence.guestId = getAllStays(selectedGuestName)[0].id; openModal('absence')"
-                class="text-xs bg-gray-700 px-2 py-1 rounded hover:bg-gray-600 text-blue-300">
-                + Ajouter
-            </button>
-        </h4>
+                    <!-- SECTION ABSENCES A VENIR -->
+                    <div class="mt-6 border-t border-gray-700 pt-6">
+                        <h4
+                            class="text-xs uppercase text-gray-500 font-bold mb-3 tracking-wider flex justify-between items-center">
+                            <span>Absences à venir</span>
+                            <button
+                                @click="modals.profile = false; forms.absence.guestId = (getGuestTrips(selectedGuestName)[0]?.segments[0]?.id || guests.find(g => g.name === selectedGuestName)?.id); openModal('absence')"
+                                class="text-xs bg-gray-700 px-2 py-1 rounded hover:bg-gray-600 text-blue-300">
+                                + Ajouter
+                            </button>
+                        </h4>
 
-        <div class="space-y-2">
-            <template x-for="(abs, index) in getAllFutureAbsences(selectedGuestName)" :key="index">
-                <div class="bg-gray-800 p-3 rounded-lg flex justify-between items-center border-l-4 border-indigo-500">
-                    <div>
-                        <div class="font-bold text-sm" x-text="formatDate(abs.date)"></div>
-                        <div class="text-xs text-gray-400 mt-1">
-                            <span x-show="abs.isMidi" class="mr-2">Midi</span>
-                            <span x-show="abs.isSoir">Soir</span>
-                            <span x-show="abs.reason" class="block text-indigo-300 italic mt-0.5"
-                                x-text="abs.reason"></span>
+                        <div class="space-y-2">
+                            <template x-for="(abs, index) in getAllFutureAbsences(selectedGuestName)" :key="index">
+                                <div
+                                    class="bg-gray-800 p-3 rounded-lg flex justify-between items-center border-l-4 border-indigo-500">
+                                    <div>
+                                        <div class="font-bold text-sm" x-text="formatDate(abs.date)"></div>
+                                        <div class="text-xs text-gray-400 mt-1">
+                                            <span x-show="abs.isMidi" class="mr-2">Midi</span>
+                                            <span x-show="abs.isSoir">Soir</span>
+                                            <span x-show="abs.reason" class="block text-indigo-300 italic mt-0.5"
+                                                x-text="abs.reason"></span>
+                                        </div>
+                                    </div>
+                                    <button @click="deleteAbsenceByRef(abs)" class="text-red-400 hover:text-white p-2">
+                                        <i class="fa-solid fa-trash"></i>
+                                    </button>
+                                </div>
+                            </template>
+                            <div x-show="getAllFutureAbsences(selectedGuestName).length === 0"
+                                class="text-gray-500 text-sm italic py-2">
+                                Aucune absence prévue.
+                            </div>
                         </div>
                     </div>
-                    <button @click="deleteAbsenceByRef(abs)" class="text-red-400 hover:text-white p-2">
-                        <i class="fa-solid fa-trash"></i>
-                    </button>
-                </div>
+                </div> <!-- Closing space-y-6 -->
             </template>
-            <div x-show="getAllFutureAbsences(selectedGuestName).length === 0"
-                class="text-gray-500 text-sm italic py-2">
-                Aucune absence prévue.
-            </div>
         </div>
-    </div>
-    </div>
-    </template>
-    </div>
     </div>
 
     <div x-show="modals.absence" class="fixed inset-0 bg-black/80 z-50 flex items-center justify-center p-4"
