@@ -577,11 +577,22 @@
                         <div class="space-y-6">
                             <template x-for="trip in getGuestTrips(selectedGuestName)" :key="trip.start">
                                 <div>
-                                    <!-- Trip Header -->
-                                    <div class="flex items-center gap-2 mb-2">
-                                        <div class="text-white font-bold text-sm bg-gray-700 px-2 py-1 rounded">
-                                            Séjour du <span x-text="formatDate(trip.start)"></span>
-                                            au <span x-text="formatDate(trip.end) || '...'"></span>
+                                    <!-- Trip Header (Editable) -->
+                                    <div class="mb-4 bg-[#333] p-4 rounded-xl border border-gray-700">
+                                        <div class="text-xs text-gray-400 uppercase font-bold mb-3 tracking-wider">Dates
+                                            du séjour</div>
+                                        <div class="flex items-center gap-3">
+                                            <div class="flex-1">
+                                                <input type="date" :value="trip.start"
+                                                    @change="updateTripDates(trip.segments[0].id, $event.target.value, trip.end)"
+                                                    class="bg-gray-900 border border-gray-600 focus:border-blue-500 rounded-lg text-white text-sm w-full p-2.5">
+                                            </div>
+                                            <div class="text-gray-500"><i class="fa-solid fa-arrow-right"></i></div>
+                                            <div class="flex-1">
+                                                <input type="date" :value="trip.end"
+                                                    @change="updateTripDates(trip.segments[0].id, trip.start, $event.target.value)"
+                                                    class="bg-gray-900 border border-gray-600 focus:border-blue-500 rounded-lg text-white text-sm w-full p-2.5">
+                                            </div>
                                         </div>
                                     </div>
 
@@ -612,10 +623,11 @@
                                                                 class="text-xs text-gray-400 hover:text-white bg-gray-700 px-2 py-1 rounded">
                                                                 <i class="fa-solid fa-pencil"></i>
                                                             </button>
-                                                            <!-- Delete only if it's a real segment we can identify distinctively, or rely on logic -->
-                                                            <button
-                                                                @click="deleteGuest(stay.id); modals.profile = false"
-                                                                title="Supprimer tout le séjour"
+
+                                                            <!-- Smart Delete: Only if > 1 segment -->
+                                                            <button x-show="trip.segments.length > 1"
+                                                                @click="removeRoomSegment(stay.id, index)"
+                                                                title="Supprimer ce changement de chambre"
                                                                 class="text-xs text-red-900 hover:text-red-500 hover:bg-red-900/20 px-2 py-1 rounded">
                                                                 <i class="fa-solid fa-trash"></i>
                                                             </button>
@@ -1408,6 +1420,81 @@
                 resetGuestForm() {
                     this.forms.guest = { name: '', name2: '', arrival: this.today, departure: '', room: 'Chambre Joëlle', isCouple: false }; // Updated default room to valid one
                     this.editingId = null;
+                },
+
+                // PROFILE ACTIONS
+                async updateTripDates(guestId, newStart, newEnd) {
+                    const guest = this.guests.find(g => g.id === guestId);
+                    if (!guest) return;
+
+                    // Update Main Dates
+                    guest.arrival = newStart;
+                    guest.departure = newEnd;
+
+                    // Sync History Start
+                    // If history exists, the first entry must match the new arrival date
+                    if (guest.roomHistory && guest.roomHistory.length > 0) {
+                        guest.roomHistory[0].date = newStart;
+                        // Sort again just in case, though usually 0 is earliest
+                        guest.roomHistory.sort((a, b) => a.date.localeCompare(b.date));
+                    }
+
+                    if (this.isOnline && guest.firestoreId) {
+                        await window.dbUpdate('guests', guest.firestoreId, {
+                            arrival: guest.arrival,
+                            departure: guest.departure,
+                            roomHistory: guest.roomHistory
+                        });
+                    } else {
+                        this.save();
+                    }
+                },
+
+                async removeRoomSegment(guestId, indexInTrip) {
+                    // Logic:
+                    // If index > 0: Remove entry. Previous entry (index-1) automatically covers the gap.
+                    // If index == 0: Remove entry. Next entry (index+1) becomes the start.
+                    //                We MUST update the next entry's date to match guest.arrival.
+
+                    const guest = this.guests.find(g => g.id === guestId);
+                    if (!guest || !guest.roomHistory) return;
+
+                    // We are working with the processed "Trip" segments indices in the UI loop,
+                    // but since roomHistory map 1:1 to segments (mostly), we can map back.
+                    // However, getGuestTrips merges stuff. 
+                    // Let's assume for now 1 Doc = 1 Trip as we merged earlier.
+                    // The 'index' passed from the loop corresponds to roomHistory index.
+
+                    if (indexInTrip >= guest.roomHistory.length) return;
+
+                    if (indexInTrip === 0) {
+                        // Deleting First Segment
+                        if (guest.roomHistory.length > 1) {
+                            // Point 2 becomes Point 1 (Start)
+                            // Remove element 0
+                            guest.roomHistory.splice(0, 1);
+                            // New Element 0 must start at Arrival
+                            guest.roomHistory[0].date = guest.arrival;
+                        } else {
+                            // Only 1 segment? Can't delete the only room. Use Delete Guest instead.
+                            alert("Impossible de supprimer la seule chambre. Supprimez l'invité si nécessaire.");
+                            return;
+                        }
+                    } else {
+                        // Deleting Middle/Last Segment
+                        // Simple remove. The previous one stays active until the *next* one (or end).
+                        guest.roomHistory.splice(indexInTrip, 1);
+                    }
+
+                    if (this.isOnline && guest.firestoreId) {
+                        await window.dbUpdate('guests', guest.firestoreId, { roomHistory: guest.roomHistory });
+                    } else {
+                        this.save();
+                    }
+
+                    // Refresh UI
+                    this.modals.profile = false;
+                    setTimeout(() => { this.selectedGuestName = guest.name; this.modals.profile = true; }, 50); // Hacky refresh
                 },
 
                 async deleteGuest(id) {
