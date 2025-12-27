@@ -1,0 +1,1711 @@
+<!DOCTYPE html>
+<html lang="fr">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>L'armoise 🏡</title>
+
+    <!-- PWA -->
+    <link rel="manifest" href="./manifest.json">
+    <meta name="theme-color" content="#1a1a1a">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <link rel="apple-touch-icon" href="https://cdn-icons-png.flaticon.com/512/619/619032.png">
+
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.13.3/dist/cdn.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/Sortable/1.15.0/Sortable.min.js"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+
+    <style>
+        body {
+            background-color: #1a1a1a;
+            color: white;
+            -webkit-tap-highlight-color: transparent;
+        }
+
+        .card {
+            background-color: #262626;
+            border-radius: 16px;
+        }
+
+        .btn-primary {
+            background-color: #EAB308;
+            color: black;
+            font-weight: bold;
+        }
+
+        /* Jaune moutarde comme tes screenshots */
+        .nav-item.active {
+            color: #EAB308;
+        }
+
+        .nav-item {
+            color: #6b7280;
+            width: 100%;
+        }
+
+        /* Pour masquer la scrollbar mais garder le scroll */
+        .no-scrollbar::-webkit-scrollbar {
+            display: none;
+        }
+
+        .no-scrollbar {
+            -ms-overflow-style: none;
+            scrollbar-width: none;
+        }
+    </style>
+</head>
+
+<body x-data="chaletApp()" x-init="init()" class="pb-24">
+
+    <div
+        class="fixed top-0 w-full bg-[#1a1a1a] z-50 p-4 border-b border-gray-800 flex justify-between items-center h-16 shadow-md">
+        <!-- Titre / Home simple -->
+        <h1 class="text-xl font-bold flex items-center gap-2 w-1/4">
+            🏡 <span class="hidden sm:inline">L'armoise</span>
+        </h1>
+
+        <!-- Date Navigation Centrée -->
+        <div class="flex items-center gap-3 justify-center w-2/4">
+            <button @click="prevDay()" class="text-gray-400 hover:text-white p-2">
+                <i class="fa-solid fa-chevron-left"></i>
+            </button>
+
+            <div class="relative group cursor-pointer text-center" @click="openCalendar()">
+                <div class="font-bold text-lg leading-none" x-text="formatDate(viewDate)"></div>
+                <div class="text-[10px] text-gray-500 uppercase font-bold"
+                    x-text="viewDate === today ? 'Aujourd\'hui' : daysUntil(viewDate)"></div>
+            </div>
+
+            <button @click="nextDay()" class="text-gray-400 hover:text-white p-2">
+                <i class="fa-solid fa-chevron-right"></i>
+            </button>
+        </div>
+
+        <!-- Bouton Reset Date (visible si pas aujourd'hui) -->
+        <div class="w-1/4 flex justify-end">
+            <button x-show="viewDate !== today" @click="gotoToday()" x-transition
+                class="text-xs bg-gray-800 hover:bg-gray-700 text-yellow-500 px-3 py-1.5 rounded-full flex items-center gap-1 border border-gray-700">
+                <i class="fa-solid fa-rotate-left"></i>
+                <span class="hidden sm:inline">Aujourd'hui</span>
+            </button>
+            <button x-show="viewDate === today" @click="resetData()"
+                class="text-xs text-gray-700 hover:text-red-900 ml-auto">Reset All</button>
+        </div>
+    </div>
+
+    <!-- CALENDRIER CUSTOM MODAL -->
+    <div x-show="showCalendar" class="fixed inset-0 bg-black/60 z-[60] flex items-start justify-center pt-20"
+        @click.self="showCalendar = false" x-transition.opacity>
+
+        <div class="bg-[#262626] rounded-2xl p-6 shadow-2xl w-[320px] border border-gray-800" x-show="showCalendar"
+            x-transition.scale.origin.top>
+            <!-- Header Mois/Année + Nav -->
+            <div class="flex justify-between items-center mb-6">
+                <button @click="prevMonth()"
+                    class="w-8 h-8 flex items-center justify-center rounded-lg bg-gray-800 hover:bg-gray-700 text-gray-400">
+                    <i class="fa-solid fa-chevron-left"></i>
+                </button>
+                <div class="font-bold text-lg capitalize" x-text="getCalendarTitle()"></div>
+                <button @click="nextMonth()"
+                    class="w-8 h-8 flex items-center justify-center rounded-lg bg-gray-800 hover:bg-gray-700 text-gray-400">
+                    <i class="fa-solid fa-chevron-right"></i>
+                </button>
+            </div>
+
+            <!-- Jours Semaine -->
+            <div class="grid grid-cols-7 mb-2 text-center text-gray-500 text-xs font-bold uppercase">
+                <div>lu</div>
+                <div>ma</div>
+                <div>me</div>
+                <div>je</div>
+                <div>ve</div>
+                <div>sa</div>
+                <div>di</div>
+            </div>
+
+            <!-- Grille Jours -->
+            <div class="grid grid-cols-7 gap-1 text-sm">
+                <template x-for="(d, index) in getCalendarDays()" :key="index">
+                    <div class="aspect-square flex items-center justify-center rounded-lg cursor-pointer transition-colors"
+                        :class="{
+                            'invisible': d.empty,
+                            'bg-yellow-500 text-black font-bold shadow-lg shadow-yellow-500/20': !d.empty && d.isSelected,
+                            'text-white hover:bg-gray-800': !d.empty && !d.isSelected,
+                            'border border-gray-700': !d.empty && d.isToday && !d.isSelected
+                         }" @click="!d.empty && selectDate(d.dateStr)">
+                        <span x-text="d.day"></span>
+                    </div>
+                </template>
+            </div>
+        </div>
+    </div>
+
+    <div class="pt-20 px-4 max-w-lg mx-auto">
+
+        <div x-show="currentTab === 'dashboard'" x-transition.opacity>
+
+            <div class="grid grid-cols-2 gap-4 mb-6">
+                <div class="card p-5 text-center border-t-4 border-yellow-500">
+                    <div class="text-gray-400 text-sm uppercase font-semibold">Midi</div>
+                    <div class="text-5xl font-bold my-2" x-text="countMeal('midi')">0</div>
+                    <div class="text-xs text-gray-500">Couverts</div>
+                </div>
+                <div class="card p-5 text-center border-t-4 border-indigo-500">
+                    <div class="text-gray-400 text-sm uppercase font-semibold">Soir</div>
+                    <div class="text-5xl font-bold my-2" x-text="countMeal('soir')">0</div>
+                    <div class="text-xs text-gray-500">Couverts</div>
+                </div>
+            </div>
+
+            <!-- New Occupancy Stats Card -->
+            <div class="card p-4 mb-6 flex justify-between items-center border-l-4 border-purple-500">
+                <div>
+                    <h3 class="font-bold text-gray-200">Occupation Totale</h3>
+                    <div class="text-xs text-gray-500">Aujourd'hui</div>
+                </div>
+                <div class="text-right">
+                    <span class="text-2xl font-bold text-purple-400" x-text="getTotalOccupancy()"></span>
+                    <span class="text-gray-500">/</span>
+                    <span class="text-xl font-bold text-gray-600" x-text="getTotalCapacity()"></span>
+                </div>
+            </div>
+
+            <div class="grid grid-cols-3 gap-3 mb-8">
+                <button @click="resetGuestForm(); openModal('guest')"
+                    class="btn-primary py-3 px-2 rounded-xl flex flex-col items-center justify-center gap-1 shadow-lg text-sm">
+                    <i class="fa-solid fa-user-plus text-lg"></i> <span>Arrivée</span>
+                </button>
+                <button @click="resetMealGuestForm(); openModal('mealGuest')"
+                    class="bg-blue-600 hover:bg-blue-500 text-white py-3 px-2 rounded-xl flex flex-col items-center justify-center gap-1 shadow-lg text-sm">
+                    <i class="fa-solid fa-utensils text-lg"></i> <span>Repas</span>
+                </button>
+                <button @click="openModal('absence')"
+                    class="bg-gray-700 text-white py-3 px-2 rounded-xl flex flex-col items-center justify-center gap-1 shadow-lg text-sm">
+                    <i class="fa-solid fa-calendar-xmark text-lg"></i> <span>Absence</span>
+                </button>
+            </div>
+
+            <h2 class="text-lg font-bold mb-3 text-gray-300">Prochains Départs</h2>
+            <div class="space-y-3 mb-6">
+                <template x-for="guest in getUpcomingDepartures()" :key="guest.id">
+                    <div class="card p-4 flex justify-between items-center">
+                        <div>
+                            <div class="font-bold text-lg cursor-pointer hover:text-blue-400 transition-colors"
+                                @click="openProfile(guest)">
+                                <span x-text="guest.name"></span>
+                                <span x-show="guest.beds > 1"
+                                    class="text-xs bg-yellow-500/20 text-yellow-500 px-1.5 py-0.5 rounded ml-1">x2</span>
+                            </div>
+                            <div class="text-sm text-gray-400">
+                                <i class="fa-solid fa-arrow-right-from-bracket mr-1"></i>
+                                <span x-text="formatDate(guest.departure)"></span>
+                            </div>
+                        </div>
+                        <div class="text-sm bg-gray-800 px-3 py-1 rounded-full text-yellow-500"
+                            x-text="daysUntil(guest.departure)"></div>
+                    </div>
+                </template>
+                <div x-show="getUpcomingDepartures().length === 0" class="text-gray-600 text-center text-sm py-2">Aucun
+                    départ proche</div>
+            </div>
+
+            <h2 class="text-lg font-bold mb-3 text-gray-300">Prochaines Arrivées</h2>
+            <div class="space-y-3">
+                <template x-for="guest in getUpcomingArrivals()" :key="guest.id">
+                    <div class="card p-4 flex justify-between items-center">
+                        <div>
+                            <div class="font-bold text-lg">
+                                <span x-text="guest.name"></span>
+                                <span x-show="guest.beds > 1"
+                                    class="text-xs bg-yellow-500/20 text-yellow-500 px-1.5 py-0.5 rounded ml-1">x2</span>
+                            </div>
+                            <div class="text-sm text-gray-400">
+                                <i class="fa-solid fa-plane-arrival mr-1"></i>
+                                <span x-text="formatDate(guest.arrival)"></span>
+                            </div>
+                        </div>
+                        <div class="text-sm bg-gray-800 px-3 py-1 rounded-full text-green-500"
+                            x-text="daysUntil(guest.arrival)"></div>
+                    </div>
+                </template>
+                <div x-show="getUpcomingArrivals().length === 0" class="text-gray-600 text-center text-sm py-2">Aucune
+                    arrivée prévue</div>
+            </div>
+        </div>
+
+        <div x-show="currentTab === 'rooms'" x-transition.opacity>
+            <div class="flex items-baseline gap-3 mb-6">
+                <h2 class="text-2xl font-bold">État des Chambres</h2>
+                <span class="text-sm font-bold bg-gray-800 text-gray-400 px-3 py-1 rounded-full border border-gray-700">
+                    <i class="fa-solid fa-users mr-1"></i>
+                    <span x-text="getTotalOccupancy()"></span> / <span x-text="getTotalCapacity()"></span>
+                </span>
+            </div>
+
+            <div class="grid grid-cols-2 gap-3">
+                <template x-for="room in rooms" :key="room.name">
+                    <div class="card p-4 flex flex-col h-full relative overflow-hidden">
+                        <!-- Header / Status -->
+                        <div class="flex justify-between items-start mb-2">
+                            <div class="px-2 py-0.5 rounded text-xs font-bold"
+                                :class="getRoomOccupancy(room.name) >= room.capacity ? 'bg-red-900/50 text-red-200' : 'bg-green-900/50 text-green-200'">
+                                <span x-text="room.capacity - getRoomOccupancy(room.name)"></span> <i
+                                    class="fa-solid fa-bed ml-1"></i>
+                            </div>
+                        </div>
+
+                        <!-- Room Name -->
+                        <div class="mb-3 text-center">
+                            <h3 class="font-bold text-lg leading-tight" x-text="room.name"></h3>
+                            <div class="text-xs text-gray-500 mt-1">Capacité: <span x-text="room.capacity"></span></div>
+                        </div>
+
+                        <!-- Occupants -->
+                        <div class="mt-auto">
+                            <!-- room-guest-list class added for SortableJS targeting -->
+                            <!-- data-room added for identifying target -->
+                            <div class="flex flex-wrap gap-1 justify-center room-guest-list min-h-[30px]"
+                                :data-room="room.name">
+                                <template x-for="guest in getGuestsInRoom(room.name)" :key="guest.id">
+                                    <div :data-id="guest.id"
+                                        class="bg-gray-700 px-2 py-1 rounded text-xs flex items-center gap-1 max-w-full truncate cursor-grab active:cursor-grabbing border border-gray-600 hover:border-gray-500 shadow-sm relative z-10"
+                                        @click.stop="openProfile(guest)">
+                                        <span class="truncate pointer-events-none">
+                                            <span x-text="guest.name"></span>
+                                            <span x-show="guest.beds > 1"
+                                                class="text-[10px] text-yellow-500 ml-0.5">(x2)</span>
+                                        </span>
+                                        <!-- pointer-events-auto needed because parent is draggable -->
+                                        <!-- We stop propagation on button to prevent drag start when clicking delete (though delete needs confirm so it's tricky) -->
+                                        <!-- Better: Sortable handle option OR ignore delete button class. Sortable ignores inputs by default. -->
+                                        <button @click.stop="deleteGuest(guest.id)"
+                                            class="text-red-400 hover:text-red-200 ml-0.5 pointer-events-auto on-top">×</button>
+                                    </div>
+                                </template>
+                                <div x-show="getGuestsInRoom(room.name).length === 0"
+                                    class="text-xs text-gray-600 italic pointer-events-none p-1">Vide</div>
+                            </div>
+                        </div>
+                    </div>
+                </template>
+            </div>
+        </div>
+
+        <div x-show="currentTab === 'meals'" x-transition.opacity>
+
+            <div class="mb-8">
+                <div class="flex justify-between items-center mb-4">
+                    <h2 class="text-xl font-bold text-yellow-500"><i class="fa-regular fa-sun mr-2"></i>Ce Midi</h2>
+                    <span class="bg-yellow-900 text-yellow-200 px-3 py-1 rounded-full text-sm font-bold"
+                        x-text="countMeal('midi')"></span>
+                </div>
+                <div class="card overflow-hidden">
+                    <template x-for="guest in getMealList('midi')" :key="guest.id">
+                        <div class="p-4 border-b border-gray-700 flex justify-between items-center last:border-0">
+                            <span class="font-medium cursor-pointer hover:text-blue-400 transition-colors"
+                                @click="openProfile(guest)">
+                                <span x-text="guest.name"></span>
+                                <span x-show="guest.beds > 1"
+                                    class="text-xs bg-yellow-500/20 text-yellow-500 px-1.5 py-0.5 rounded ml-1">
+                                    x2</span>
+                            </span>
+                            <div class="flex items-center gap-3">
+                                <span class="text-xs text-gray-500" x-text="guest.room"></span>
+                                <button @click.stop="markAbsentFromMeal(guest, 'midi')"
+                                    class="text-xs bg-gray-700 hover:bg-gray-600 text-gray-300 px-2 py-1 rounded transition-colors"
+                                    title="Signaler absent">
+                                    Absent?
+                                </button>
+                            </div>
+                        </div>
+                    </template>
+                    <div x-show="getMealList('midi').length === 0" class="p-6 text-center text-gray-500">Personne</div>
+
+                    <!-- ABSENTS MIDI -->
+                    <div x-show="getAbsentList('midi').length > 0" class="bg-red-900/10 border-t border-gray-700">
+                        <div class="px-4 py-2 text-xs font-bold text-red-400 uppercase tracking-wider">Absents</div>
+                        <template x-for="guest in getAbsentList('midi')" :key="guest.id">
+                            <div
+                                class="px-4 py-2 flex justify-between items-center opacity-70 hover:opacity-100 transition-opacity">
+                                <div class="flex items-center gap-2">
+                                    <span class="font-medium line-through decoration-red-500/50"
+                                        x-text="guest.name"></span>
+                                    <span x-show="guest.reason" class="text-xs text-red-300 italic"
+                                        x-text="'(' + guest.reason + ')'"></span>
+                                </div>
+                                <button @click="restorePresence(guest.id, 'midi')"
+                                    class="text-xs bg-red-900/50 hover:bg-red-900 text-red-200 px-2 py-1 rounded transition-colors"
+                                    title="Rétablir la présence">
+                                    Présent
+                                </button>
+                            </div>
+                        </template>
+                    </div>
+                </div>
+            </div>
+
+            <div>
+                <div class="flex justify-between items-center mb-4">
+                    <h2 class="text-xl font-bold text-indigo-400"><i class="fa-solid fa-moon mr-2"></i>Ce Soir</h2>
+                    <span class="bg-indigo-900 text-indigo-200 px-3 py-1 rounded-full text-sm font-bold"
+                        x-text="countMeal('soir')"></span>
+                </div>
+                <div class="card overflow-hidden">
+                    <template x-for="guest in getMealList('soir')" :key="guest.id">
+                        <div class="p-4 border-b border-gray-700 flex justify-between items-center last:border-0 group">
+                            <span class="font-medium cursor-pointer hover:text-blue-400 transition-colors"
+                                @click="openProfile(guest)">
+                                <span x-text="guest.name"></span>
+                                <span x-show="guest.beds > 1"
+                                    class="text-xs bg-indigo-500/20 text-indigo-300 px-1.5 py-0.5 rounded ml-1">Waitlist
+                                    x2</span>
+                            </span>
+                            <div class="flex items-center gap-3">
+                                <span class="text-xs text-gray-500" x-text="guest.room"></span>
+                                <button @click.stop="markAbsentFromMeal(guest, 'soir')"
+                                    class="text-xs bg-gray-700 hover:bg-gray-600 text-gray-300 px-2 py-1 rounded transition-colors"
+                                    title="Signaler absent">
+                                    Absent?
+                                </button>
+                            </div>
+                        </div>
+                    </template>
+                    <div x-show="getMealList('soir').length === 0" class="p-6 text-center text-gray-500">Personne</div>
+
+                    <!-- ABSENTS SOIR -->
+                    <div x-show="getAbsentList('soir').length > 0" class="bg-red-900/10 border-t border-gray-700">
+                        <div class="px-4 py-2 text-xs font-bold text-red-400 uppercase tracking-wider">Absents</div>
+                        <template x-for="guest in getAbsentList('soir')" :key="guest.id">
+                            <div
+                                class="px-4 py-2 flex justify-between items-center opacity-70 hover:opacity-100 transition-opacity group">
+                                <div class="flex items-center gap-2">
+                                    <span class="font-medium line-through decoration-red-500/50"
+                                        x-text="guest.name"></span>
+                                    <span x-show="guest.reason" class="text-xs text-red-300 italic"
+                                        x-text="'(' + guest.reason + ')'"></span>
+                                </div>
+                                <button @click="restorePresence(guest.id, 'soir')"
+                                    class="text-xs bg-red-900/50 hover:bg-red-900 text-red-200 px-2 py-1 rounded transition-colors"
+                                    title="Rétablir">
+                                    Présent?
+                                </button>
+                            </div>
+                        </template>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div x-show="currentTab === 'changes'" x-transition.opacity>
+            <h2 class="text-2xl font-bold mb-6">Mouvements</h2>
+
+            <!-- SECTION CHANGEMENTS DE CHAMBRE -->
+            <div class="mb-8">
+                <div class="flex justify-between items-center mb-4">
+                    <h2 class="text-xl font-bold text-blue-400"><i
+                            class="fa-solid fa-arrow-right-arrow-left mr-2"></i>Changements</h2>
+                </div>
+                <div class="space-y-3">
+                    <template x-for="move in getInternalMoves()" :key="move.guest.id">
+                        <div class="card p-4">
+                            <div class="flex justify-between items-start mb-2">
+                                <div class="font-bold text-lg cursor-pointer hover:text-blue-400 transition-colors"
+                                    @click="openProfile(move.guest)">
+                                    <span x-text="move.guest.name"></span>
+                                    <span x-show="move.guest.beds > 1"
+                                        class="text-xs bg-yellow-500/20 text-yellow-500 px-1.5 py-0.5 rounded ml-1">x2</span>
+                                </div>
+                                <div class="flex flex-col items-end gap-2">
+                                    <div class="text-sm bg-gray-800 px-3 py-1 rounded-full text-blue-400 w-fit whitespace-nowrap"
+                                        x-text="daysUntil(move.date)"></div>
+                                    <button @click="cancelMove(move)"
+                                        class="text-xs text-red-400 hover:text-red-300 hover:bg-red-900/30 px-2 py-1 rounded transition-colors"
+                                        title="Annuler le changement et remettre dans la chambre initiale">
+                                        <i class="fa-solid fa-rotate-left mr-1"></i> Annuler
+                                    </button>
+                                </div>
+                            </div>
+
+                            <div class="flex items-center gap-3 text-sm text-gray-400 bg-gray-800/50 p-3 rounded-lg">
+                                <span x-text="move.fromRoom" class="text-red-400 font-medium"></span>
+                                <i class="fa-solid fa-arrow-right text-gray-500"></i>
+                                <span x-text="move.toRoom" class="text-green-400 font-medium"></span>
+                            </div>
+                            <div class="text-xs text-gray-500 mt-2 text-right">
+                                Le <span x-text="formatDate(move.date)"></span>
+                            </div>
+                        </div>
+                    </template>
+                    <div x-show="getInternalMoves().length === 0" class="text-gray-600 text-center text-sm py-4 italic">
+                        Aucun changement prévu</div>
+
+                </div>
+            </div>
+
+            <!-- SECTION NOUVELLES ARRIVÉES (DANS CHAMBRES) -->
+            <div>
+                <div class="flex justify-between items-center mb-4">
+                    <h2 class="text-xl font-bold text-green-400"><i class="fa-solid fa-door-open mr-2"></i>Arrivées</h2>
+                </div>
+                <div class="space-y-3">
+                    <template x-for="guest in getUpcomingArrivals()" :key="guest.id">
+                        <div class="card p-4 flex justify-between items-center">
+                            <div>
+                                <div class="font-bold text-lg cursor-pointer hover:text-blue-400 transition-colors"
+                                    @click="openProfile(guest)">
+                                    <span x-text="guest.name"></span>
+                                    <span x-show="guest.beds > 1"
+                                        class="text-xs bg-yellow-500/20 text-yellow-500 px-1.5 py-0.5 rounded ml-1">x2</span>
+                                </div>
+                                <div class="text-sm text-gray-400 mt-1">
+                                    <i class="fa-solid fa-bed mr-1"></i> <span x-text="guest.room"></span>
+                                </div>
+                                <div class="text-sm text-gray-500">
+                                    <i class="fa-solid fa-calendar mr-1"></i> <span
+                                        x-text="formatDate(guest.arrival)"></span>
+                                </div>
+                            </div>
+                            <div class="text-sm bg-gray-800 px-3 py-1 rounded-full text-green-500"
+                                x-text="daysUntil(guest.arrival)"></div>
+                        </div>
+                    </template>
+                    <div x-show="getUpcomingArrivals().length === 0"
+                        class="text-gray-600 text-center text-sm py-4 italic">Aucune arrivée prévue</div>
+                </div>
+            </div>
+        </div>
+
+    </div>
+
+    <div class="fixed bottom-0 w-full bg-[#1a1a1a] border-t border-gray-800 pb-safe pt-2 grid grid-cols-4 items-center justify-items-center z-20"
+        style="padding-bottom: 20px;">
+        <button @click="currentTab = 'dashboard'" class="flex flex-col items-center nav-item"
+            :class="currentTab === 'dashboard' ? 'active' : ''">
+            <i class="fa-solid fa-house text-xl mb-1"></i>
+            <span class="text-xs">Accueil</span>
+        </button>
+        <button @click="currentTab = 'rooms'" class="flex flex-col items-center nav-item"
+            :class="currentTab === 'rooms' ? 'active' : ''">
+            <i class="fa-solid fa-bed text-xl mb-1"></i>
+            <span class="text-xs">Chambres</span>
+        </button>
+        <button @click="currentTab = 'meals'" class="flex flex-col items-center nav-item"
+            :class="currentTab === 'meals' ? 'active' : ''">
+            <i class="fa-solid fa-utensils text-xl mb-1"></i>
+            <span class="text-xs">Repas</span>
+        </button>
+        <button @click="currentTab = 'changes'" class="flex flex-col items-center nav-item"
+            :class="currentTab === 'changes' ? 'active' : ''">
+            <i class="fa-solid fa-arrow-right-arrow-left text-xl mb-1"></i>
+            <span class="text-xs">Changements</span>
+        </button>
+    </div>
+
+    <!-- MODAL DELETED -->
+
+    <div x-show="modals.guest" class="fixed inset-0 bg-black/80 z-50 flex items-center justify-center p-4" x-transition>
+        <div class="bg-[#262626] w-full max-w-sm rounded-2xl p-6 shadow-2xl">
+            <h3 class="text-xl font-bold mb-4">Nouvelle Arrivée</h3>
+            <div class="space-y-4">
+                <input x-model="forms.guest.name" type="text" placeholder="Prénom"
+                    class="w-full bg-gray-800 border-none rounded-lg p-3 text-white">
+
+                <div class="grid grid-cols-2 gap-2">
+                    <div>
+                        <label class="text-xs text-gray-500 ml-1">Arrivée</label>
+                        <input x-model="forms.guest.arrival" type="date"
+                            class="w-full bg-gray-800 border-none rounded-lg p-3 text-white">
+                    </div>
+                    <div>
+                        <label class="text-xs text-gray-500 ml-1">Départ (Optionnel)</label>
+                        <input x-model="forms.guest.departure" type="date"
+                            class="w-full bg-gray-800 border-none rounded-lg p-3 text-white">
+                    </div>
+                </div>
+
+                <div>
+                    <label class="text-xs text-gray-500 ml-1">Chambre</label>
+                    <select x-model="forms.guest.room" class="w-full bg-gray-800 border-none rounded-lg p-3 text-white">
+                        <template x-for="room in rooms" :key="room.name">
+                            <option :value="room.name" x-text="room.name"></option>
+                        </template>
+                    </select>
+                </div>
+
+                <div class="flex items-center gap-2 bg-gray-800 p-3 rounded-lg">
+                    <input type="checkbox" id="isCouple" x-model="forms.guest.isCouple"
+                        class="w-5 h-5 accent-yellow-500 rounded">
+                    <label for="isCouple" class="text-sm select-none cursor-pointer">Couple (Ajouter conjoint)</label>
+                </div>
+
+                <div x-show="forms.guest.isCouple" x-transition>
+                    <input x-model="forms.guest.name2" type="text" placeholder="Prénom du conjoint"
+                        class="w-full bg-gray-800 border-none rounded-lg p-3 text-white mt-4 border-l-4 border-yellow-500">
+                </div>
+
+                <div class="flex gap-2 mt-6">
+                    <button @click="resetGuestForm(); modals.guest = false"
+                        class="flex-1 py-3 bg-gray-700 rounded-lg">Annuler</button>
+                    <button @click="addGuest()" class="flex-1 py-3 btn-primary rounded-lg">Ajouter</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div x-show="modals.profile" class="fixed inset-0 bg-black/80 z-[60] flex items-center justify-center p-4"
+        x-transition>
+        <div class="bg-[#262626] w-full max-w-md rounded-2xl p-6 shadow-2xl overflow-y-auto max-h-[90vh]">
+            <div class="flex justify-between items-start mb-6">
+                <h3 class="text-2xl font-bold text-white relative">
+                    <span x-text="selectedGuestName"></span>
+                    <span class="absolute -bottom-2 left-0 w-1/2 h-1 bg-blue-500 rounded-full"></span>
+                </h3>
+                <button @click="modals.profile = false" class="text-gray-400 hover:text-white">
+                    <i class="fa-solid fa-times text-xl"></i>
+                </button>
+            </div>
+
+            <template x-if="selectedGuestName">
+                <div class="space-y-6">
+                    <!-- SECTION SEJOURS -->
+                    <div>
+                        <h4 class="text-xs uppercase text-gray-500 font-bold mb-3 tracking-wider">Parcours Séjour</h4>
+
+                        <div class="space-y-6">
+                            <template x-for="trip in getGuestTrips(selectedGuestName)" :key="trip.start">
+                                <div>
+                                    <!-- Trip Header -->
+                                    <div class="flex items-center gap-2 mb-2">
+                                        <div class="text-white font-bold text-sm bg-gray-700 px-2 py-1 rounded">
+                                            Séjour du <span x-text="formatDate(trip.start)"></span>
+                                            au <span x-text="formatDate(trip.end) || '...'"></span>
+                                        </div>
+                                    </div>
+
+                                    <!-- Segments Timeline -->
+                                    <div class="space-y-3 relative pl-4 border-l border-gray-700 ml-2">
+                                        <template x-for="stay in trip.segments" :key="stay.id">
+                                            <div class="relative pl-6">
+                                                <!-- Timeline dot -->
+                                                <div class="absolute -left-[21px] top-6 w-3 h-3 rounded-full border-2 border-[#262626]"
+                                                    :class="isHere(stay, viewDate) ? 'bg-green-500' : 'bg-gray-600'">
+                                                </div>
+
+                                                <div class="bg-gray-800 p-3 rounded-lg border border-gray-700">
+                                                    <div class="flex justify-between items-center mb-1">
+                                                        <div class="font-bold text-blue-400" x-text="stay.room"></div>
+                                                        <div class="flex gap-2">
+                                                            <button @click="editGuest(stay)"
+                                                                class="text-xs text-gray-400 hover:text-white bg-gray-700 px-2 py-1 rounded">
+                                                                <i class="fa-solid fa-pencil"></i>
+                                                            </button>
+                                                            <button
+                                                                @click="deleteGuest(stay.id); modals.profile = false"
+                                                                class="text-xs text-red-900 hover:text-red-500 hover:bg-red-900/20 px-2 py-1 rounded">
+                                                                <i class="fa-solid fa-trash"></i>
+                                                            </button>
+                                                        </div>
+                                                    </div>
+                                                    <div class="text-sm text-gray-300 flex items-center gap-2">
+                                                        <span><i
+                                                                class="fa-solid fa-clock text-gray-500 mr-1"></i></span>
+                                                        <span x-text="formatDate(stay.arrival)"></span>
+                                                        <i class="fa-solid fa-arrow-right text-gray-600 text-xs"></i>
+                                                        <span x-text="formatDate(stay.departure) || '∞'"></span>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        </template>
+                                    </div>
+                                </div>
+                            </template>
+                        </div>
+                    </div>
+
+                    <!-- SECTION ABSENCES A VENIR -->
+                    <div>
+                        <h4
+                            class="text-xs uppercase text-gray-500 font-bold mb-3 tracking-wider flex justify-between items-center">
+                            <span>Absences à venir</span>
+                            <button
+                                @click="modals.profile = false; forms.absence.guestId = getAllStays(selectedGuestName)[0].id; openModal('absence')"
+                                class="text-xs bg-gray-700 px-2 py-1 rounded hover:bg-gray-600 text-blue-300">
+                                + Ajouter
+                            </button>
+                        </h4>
+
+                        <div class="space-y-2">
+                            <template x-for="(abs, index) in getAllFutureAbsences(selectedGuestName)" :key="index">
+                                <div
+                                    class="bg-gray-800 p-3 rounded-lg flex justify-between items-center border-l-4 border-indigo-500">
+                                    <div>
+                                        <div class="font-bold text-sm" x-text="formatDate(abs.date)"></div>
+                                        <div class="text-xs text-gray-400 mt-1">
+                                            <span x-show="abs.isMidi" class="mr-2">Midi</span>
+                                            <span x-show="abs.isSoir">Soir</span>
+                                            <span x-show="abs.reason" class="block text-indigo-300 italic mt-0.5"
+                                                x-text="abs.reason"></span>
+                                        </div>
+                                    </div>
+                                    <button @click="deleteAbsenceByRef(abs)" class="text-red-400 hover:text-white p-2">
+                                        <i class="fa-solid fa-trash"></i>
+                                    </button>
+                                </div>
+                            </template>
+                            <div x-show="getAllFutureAbsences(selectedGuestName).length === 0"
+                                class="text-gray-500 text-sm italic py-2">
+                                Aucune absence prévue.
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </template>
+        </div>
+    </div>
+
+    <div x-show="modals.absence" class="fixed inset-0 bg-black/80 z-50 flex items-center justify-center p-4"
+        x-transition>
+        <div class="bg-[#262626] w-full max-w-sm rounded-2xl p-6 shadow-2xl">
+            <h3 class="text-xl font-bold mb-4">Signaler une Absence</h3>
+            <div class="space-y-4">
+                <div>
+                    <label class="text-xs text-gray-500 ml-1">Qui est absent ?</label>
+                    <select x-model="forms.absence.guestId"
+                        class="w-full bg-gray-800 border-none rounded-lg p-3 text-white">
+                        <option value="">Choisir une personne...</option>
+                        <template x-for="guest in getPresentGuests()" :key="guest.id">
+                            <option :value="guest.id" x-text="guest.name + (guest.beds > 1 ? ' (Couple)' : '')">
+                            </option>
+                        </template>
+                    </select>
+                </div>
+                <div>
+                    <label class="text-xs text-gray-500 ml-1">Quelle date ?</label>
+                    <input x-model="forms.absence.date" type="date"
+                        class="w-full bg-gray-800 border-none rounded-lg p-3 text-white">
+                </div>
+                <div>
+                    <label class="text-xs text-gray-500 ml-1">Raison (Optionnel)</label>
+                    <input x-model="forms.absence.reason" type="text" placeholder="Ex: Rando, Alpage..."
+                        class="w-full bg-gray-800 border-none rounded-lg p-3 text-white">
+                </div>
+                <div class="flex gap-4 p-2">
+                    <label class="flex items-center gap-2 cursor-pointer">
+                        <input x-model="forms.absence.isMidi" type="checkbox" class="w-5 h-5 rounded accent-yellow-500">
+                        <span>Midi</span>
+                    </label>
+                    <label class="flex items-center gap-2 cursor-pointer">
+                        <input x-model="forms.absence.isSoir" type="checkbox" class="w-5 h-5 rounded accent-indigo-500">
+                        <span>Soir</span>
+                    </label>
+                </div>
+                <div class="flex gap-2 mt-6">
+                    <button @click="modals.absence = false" class="flex-1 py-3 bg-gray-700 rounded-lg">Annuler</button>
+                    <button @click="addAbsence()" class="flex-1 py-3 btn-primary rounded-lg">Valider</button>
+                </div>
+            </div>
+
+            <div class="mt-6 border-t border-gray-700 pt-4">
+                <h4 class="text-sm font-bold text-gray-500 mb-2">Absences enregistrées</h4>
+                <div class="max-h-32 overflow-y-auto space-y-2">
+                    <template x-for="(abs, index) in absences" :key="index">
+                        <div class="text-xs flex justify-between bg-gray-800 p-2 rounded items-center">
+                            <div>
+                                <div class="font-bold text-white">
+                                    <span x-text="getGuestName(abs.guestId)"></span>
+                                    <span class="text-gray-500 font-normal ml-1" x-text="formatDate(abs.date)"></span>
+                                </div>
+                                <div x-show="abs.reason" class="text-gray-400 italic" x-text="abs.reason"></div>
+                            </div>
+                            <button @click="deleteAbsence(index)" class="text-red-400 hover:text-red-200">×</button>
+                        </div>
+                    </template>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div x-show="modals.mealGuest" class="fixed inset-0 bg-black/80 z-50 flex items-center justify-center p-4"
+        x-transition>
+        <div class="bg-[#262626] w-full max-w-sm rounded-2xl p-6 shadow-2xl">
+            <h3 class="text-xl font-bold mb-4">Invité Repas (Externe)</h3>
+            <div class="space-y-4">
+                <input x-model="forms.mealGuest.name" type="text" placeholder="Nom de l'invité"
+                    class="w-full bg-gray-800 border-none rounded-lg p-3 text-white">
+
+                <div>
+                    <label class="text-xs text-gray-500 ml-1">Date</label>
+                    <input x-model="forms.mealGuest.date" type="date"
+                        class="w-full bg-gray-800 border-none rounded-lg p-3 text-white">
+                </div>
+
+                <div class="flex gap-4">
+                    <label class="flex items-center gap-2 bg-gray-800 flex-1 p-3 rounded-lg cursor-pointer">
+                        <input x-model="forms.mealGuest.isMidi" type="checkbox"
+                            class="w-5 h-5 rounded accent-yellow-500">
+                        <span>Midi</span>
+                    </label>
+                    <label class="flex items-center gap-2 bg-gray-800 flex-1 p-3 rounded-lg cursor-pointer">
+                        <input x-model="forms.mealGuest.isSoir" type="checkbox"
+                            class="w-5 h-5 rounded accent-indigo-500">
+                        <span>Soir</span>
+                    </label>
+                </div>
+
+                <div class="flex gap-2 mt-6">
+                    <button @click="modals.mealGuest = false"
+                        class="flex-1 py-3 bg-gray-700 rounded-lg">Annuler</button>
+                    <button @click="addMealGuest()"
+                        class="flex-1 py-3 bg-blue-600 hover:bg-blue-500 rounded-lg font-bold">Ajouter</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- SCRIPTS -->
+    <script type="module">
+        // Import the functions you need from the SDKs you need
+        import { initializeApp } from "firebase/app";
+        import { getAnalytics } from "firebase/analytics";
+        // TODO: Add SDKs for Firebase products that you want to use
+        // https://firebase.google.com/docs/web/setup#available-libraries
+
+        // Your web app's Firebase configuration
+        // For Firebase JS SDK v7.20.0 and later, measurementId is optional
+        const firebaseConfig = {
+            apiKey: "AIzaSyDy0UXJTtbZC_xqOzD1SuegJJCUCz1gVD0",
+            authDomain: "l-armoise.firebaseapp.com",
+            projectId: "l-armoise",
+            storageBucket: "l-armoise.firebasestorage.app",
+            messagingSenderId: "151882819270",
+            appId: "1:151882819270:web:b176110cf6a2d96bb7d9c7",
+            measurementId: "G-CKF6PDM5LG"
+        };
+
+        // Initialize Firebase
+        //const app = initializeApp(firebaseConfig);
+        //const analytics = getAnalytics(app);
+
+        let db;
+        let guestsUnsub;
+        let absencesUnsub;
+
+        // Expose Firebase DB to Alpine via global window object (temporary bridge)
+        window.initFirebase = async function (alpineComponent) {
+            try {
+                const app = initializeApp(firebaseConfig);
+                db = getFirestore(app);
+                console.log("Firebase initialized");
+
+                // Subscribe to Guests
+                const qGuests = query(collection(db, "guests"));
+                guestsUnsub = onSnapshot(qGuests, (snapshot) => {
+                    const guests = [];
+                    snapshot.forEach(doc => {
+                        guests.push({ firestoreId: doc.id, ...doc.data() });
+                    });
+                    alpineComponent.guests = guests.sort((a, b) => a.id - b.id);
+                });
+
+                // Subscribe to Absences
+                const qAbsences = query(collection(db, "absences"));
+                absencesUnsub = onSnapshot(qAbsences, (snapshot) => {
+                    const absences = [];
+                    snapshot.forEach(doc => {
+                        absences.push({ firestoreId: doc.id, ...doc.data() });
+                    });
+                    alpineComponent.absences = absences;
+                });
+
+                alpineComponent.db = db; // Attach DB to component
+                alpineComponent.isOnline = true;
+
+            } catch (e) {
+                console.error("Firebase Init Error (Keys missing?):", e);
+                alpineComponent.isOnline = false;
+                alert("Configuration Firebase manquante. L'app fonctionne en mode local (non partagé).");
+            }
+        };
+
+        // Helper global functions map to Firestore
+        window.dbAdd = async (coll, data) => addDoc(collection(db, coll), data);
+
+        // Update needs to query by our internal ID if we don't save docID logic perfectly yet
+        window.dbUpdate = async (coll, internalId, data) => {
+            const q = query(collection(db, coll), orderBy('id')); // Simple query? No, filter
+            // We need to find the doc where 'id' == internalId
+            // Since we can't 'where' easily without importing it, let's fix imports above?
+            // Imports are there: query, orderBy. need 'where'.
+        };
+        // Let's rely on saving the Firestore ID in the object locally!
+        // When we load from snapshot, we do: guests.push({ firestoreId: doc.id, ...doc.data() });
+        // So we can use that firestoreId to update.
+
+        window.dbUpdate = async (coll, firestoreId, data) => {
+            if (!firestoreId) return;
+            await updateDoc(doc(db, coll, firestoreId), data);
+        };
+
+        window.dbDelete = async (coll, firestoreId) => {
+            if (!firestoreId) return;
+            await deleteDoc(doc(db, coll, firestoreId));
+        };
+
+    </script>
+
+    <script>
+        function chaletApp() {
+            return {
+                db: null,
+                isOnline: false,
+                currentTab: 'dashboard',
+                today: new Date().toISOString().split('T')[0],
+                viewDate: new Date().toISOString().split('T')[0], // Date visualisée
+
+                // CALENDAR STATE
+                showCalendar: false,
+                calendarDate: new Date(), // Date de référence pour l'affichage du calendrier (Mois/Année)
+
+                // DRAG & DROP STATE
+                isDragging: false,
+                pendingMove: null, // { guestId, toRoom }
+
+                modals: { guest: false, absence: false, profile: false, mealGuest: false },
+                selectedGuestName: null, // Pour le modal profile
+                editingId: null, // ID du guest en cours d'édition
+
+                // DONNÉES PAR DÉFAUT (Si vide)
+                rooms: [
+                    { name: 'Chambre Joëlle', capacity: 2 },
+                    { name: 'Chambre Allain & Annie', capacity: 2 },
+                    { name: 'Chambre enfants', capacity: 2 },
+                    { name: 'Chambre visiteur', capacity: 2 },
+                    { name: 'Placard du fond', capacity: 2 },
+                    { name: 'Chambre adultes appartement', capacity: 2 },
+                    { name: 'Chambre enfants appartement', capacity: 2 },
+                    { name: 'Salon appartement', capacity: 2 }
+                ],
+                guests: [],
+                absences: [], // { guestId, date, isMidi, isSoir }
+
+                forms: {
+                    guest: { name: '', name2: '', arrival: '', departure: '', room: 'Chambre Bleue', isCouple: false },
+                    absence: { guestId: '', date: '', isMidi: false, isSoir: false, reason: '' },
+                    mealGuest: { name: '', date: '', isMidi: true, isSoir: true }
+                },
+
+                init() {
+                    // PWA Registration
+                    if ('serviceWorker' in navigator) {
+                        navigator.serviceWorker.register('./sw.js');
+                    }
+
+                    // Try to load from LocalStorage first to avoid flicker, or wait for DB?
+                    // Let's load local, then overwrite with Cloud if available.
+                    const guests = localStorage.getItem('chalet_guests');
+                    const absences = localStorage.getItem('chalet_absences');
+
+                    if (guests) this.guests = JSON.parse(guests);
+                    if (absences) this.absences = JSON.parse(absences);
+
+                    // Initialize default rooms if empty
+                    if (this.guests.length === 0) {
+                        // ... (default logic can stay)
+                    }
+
+                    // Connect to Cloud
+                    if (window.initFirebase) {
+                        window.initFirebase(this);
+                    }
+
+                    this.forms.guest.arrival = this.today;
+                    this.forms.guest.departure = ''; // Vide par défaut
+                    this.forms.absence.date = this.today;
+
+                    this.$nextTick(() => this.initSortable());
+                },
+
+                // OVERRIDE SAVE
+                save() {
+                    // Local Backup
+                    localStorage.setItem('chalet_guests', JSON.stringify(this.guests));
+                    localStorage.setItem('chalet_absences', JSON.stringify(this.absences));
+
+                    // CLOUD SYNC IS HANDLED BY INDIVIDUAL ACTIONS NOW
+                    // We need to refactor actions to push to DB
+                },
+
+                // UTILS FIRESTORE
+                async pushGuest(guest) {
+                    if (this.db) {
+                        try {
+                            // Using global window helper or direct module import?
+                            // We can't import inside Alpine easily.
+                            // Utilizing the `window.dbAdd` helper we defined.
+                            await window.dbAdd('guests', guest);
+                        } catch (e) { console.error(e); }
+                    } else {
+                        this.save();
+                    }
+                },
+
+
+
+                // GESTION ABSENCES
+                async addAbsence() {
+                    const guestId = parseInt(this.forms.absence.guestId);
+                    if (!guestId) return;
+
+                    const date = this.forms.absence.date;
+                    const existingIndex = this.absences.findIndex(a => a.guestId === guestId && a.date === date);
+
+                    const absenceData = {
+                        guestId: guestId,
+                        date: date,
+                        isMidi: this.forms.absence.isMidi,
+                        isSoir: this.forms.absence.isSoir,
+                        reason: this.forms.absence.reason || ''
+                    };
+
+                    if (existingIndex > -1) {
+                        // Merge (Update)
+                        const existing = this.absences[existingIndex];
+                        // Logic update fields...
+                        if (this.forms.absence.isMidi) existing.isMidi = true;
+                        if (this.forms.absence.isSoir) existing.isSoir = true;
+                        if (this.forms.absence.reason) {
+                            existing.reason = existing.reason ? existing.reason + ' / ' + this.forms.absence.reason : this.forms.absence.reason;
+                        }
+
+                        if (this.isOnline && existing.firestoreId) {
+                            await window.dbUpdate('absences', existing.firestoreId, {
+                                isMidi: existing.isMidi,
+                                isSoir: existing.isSoir,
+                                reason: existing.reason
+                            });
+                        } else {
+                            this.save();
+                        }
+                    } else {
+                        // Create New
+                        if (this.isOnline) {
+                            await window.dbAdd('absences', absenceData);
+                        } else {
+                            this.absences.push(absenceData);
+                            this.save();
+                        }
+                    }
+
+                    this.modals.absence = false;
+
+                    // Reset fields
+                    this.forms.absence.reason = '';
+                    this.forms.absence.isMidi = false;
+                    this.forms.absence.isSoir = false;
+                },
+
+                resetMealGuestForm() {
+                    this.forms.mealGuest = {
+                        name: '',
+                        date: this.viewDate,
+                        isMidi: true,
+                        isSoir: true
+                    };
+                },
+
+                async addMealGuest() {
+                    if (!this.forms.mealGuest.name) return;
+
+                    const guestId = Date.now();
+                    const date = this.forms.mealGuest.date;
+
+                    const guestData = {
+                        id: guestId,
+                        name: this.forms.mealGuest.name,
+                        arrival: date,
+                        departure: date,
+                        room: 'EXTERNE',
+                        beds: 1
+                    };
+
+                    // Gérer les absences si un repas n'est pas coché
+                    const absencesToAdd = [];
+                    if (!this.forms.mealGuest.isMidi) {
+                        absencesToAdd.push({
+                            guestId: guestId,
+                            date: date,
+                            isMidi: true,
+                            isSoir: false,
+                            reason: 'Repas externe (Non sélectionné)'
+                        });
+                    }
+
+                    if (!this.forms.mealGuest.isSoir) {
+                        // Use separate absence logic or update logic?
+                        // If we already added one for midi, we should merge.
+                        const existing = absencesToAdd.find(a => a.guestId === guestId);
+                        if (existing) {
+                            existing.isSoir = true;
+                        } else {
+                            absencesToAdd.push({
+                                guestId: guestId,
+                                date: date,
+                                isMidi: false,
+                                isSoir: true,
+                                reason: 'Repas externe (Non sélectionné)'
+                            });
+                        }
+                    }
+
+                    if (this.isOnline) {
+                        await window.dbAdd('guests', guestData);
+                        for (const abs of absencesToAdd) {
+                            await window.dbAdd('absences', abs);
+                        }
+                    } else {
+                        this.guests.push(guestData);
+                        absencesToAdd.forEach(a => this.absences.push(a));
+                        this.save();
+                    }
+
+                    this.modals.mealGuest = false;
+                },
+
+                initSortable() {
+                    // Pour chaque liste de chambre
+                    const containers = document.querySelectorAll('.room-guest-list');
+                    containers.forEach(container => {
+                        new Sortable(container, {
+                            group: 'rooms', // Permet le drag entre listes
+                            animation: 150,
+                            ghostClass: 'bg-yellow-500/50',
+                            onEnd: (evt) => {
+                                const itemEl = evt.item;
+                                const newRoomName = evt.to.dataset.room;
+                                const guestId = parseInt(itemEl.dataset.id);
+
+                                // Si pas de changement de liste, on ignore
+                                if (evt.to === evt.from) return;
+
+                                // On remet l'élément visuellement à sa place car Alpine va gérer le DOM
+                                // Annuler le changement DOM immédiat pour laisser Alpine gérer l'état propre après confirmation
+                                if (evt.from !== evt.to) {
+                                    evt.from.appendChild(itemEl);
+                                }
+
+                                this.handleDrop(guestId, newRoomName);
+                            }
+                        });
+                    });
+                },
+
+                handleDrop(guestId, toRoom) {
+                    const guest = this.guests.find(g => g.id === guestId);
+                    if (!guest) return;
+
+                    // 1. Correction simple : Si le séjour n'a pas commencé ou commence aujourd'hui
+                    // Ou si on drag & drop vers la MEME chambre (déjà filtré en amont mais bon)
+                    if (guest.arrival >= this.viewDate) {
+                        // Pas besoin de confirmation lourde, c'est du drag & drop standard
+                        this.confirmMove('correction', guestId, toRoom);
+                        return;
+                    }
+
+                    // 2. Changement en cours de séjour (Split)
+                    // Le séjour a commencé dans le passé.
+                    if (confirm(`Confirmer le changement de chambre pour ${guest.name} vers ${toRoom} à partir d'aujourd'hui ?`)) {
+                        this.confirmMove('split', guestId, toRoom);
+                    } else {
+                        // Si annulation, le UI refresh d'alpine devrait remettre l'item (mais parfois glitchy sans reload, on verra)
+                        // L'event sortable onEnd avait déjà `appendChild` pour revert visuellement si besoin, mais ici la logique a changé.
+                        // Idéalement on force le refresh listes.
+                        // window.location.reload(); // Un peu brutal pour annuler
+                    }
+                },
+
+                async confirmMove(type, id = this.pendingMove?.guestId, toRoom = this.pendingMove?.toRoom) {
+                    const guest = this.guests.find(g => g.id === id);
+                    if (!guest) return;
+
+                    if (type === 'correction') {
+                        // Changement simple de chambre
+                        guest.room = toRoom;
+
+                        if (this.isOnline && guest.firestoreId) {
+                            await window.dbUpdate('guests', guest.firestoreId, { room: toRoom });
+                        } else {
+                            this.save();
+                        }
+
+                    } else if (type === 'split') {
+                        // Split du séjour
+                        // 1. Clôturer l'ancien séjour hier
+                        const yesterday = this.addDaysToDate(this.viewDate, -1);
+
+                        // Créer le nouveau séjour à partir d'aujourd'hui
+                        // Utiliser une copie propre pour éviter les problèmes de Proxy
+                        const newGuest = JSON.parse(JSON.stringify(guest));
+
+                        newGuest.id = Date.now() + Math.floor(Math.random() * 1000); // ID unique robuste
+                        newGuest.arrival = this.viewDate; // Arrive aujourd'hui
+                        newGuest.room = toRoom;
+                        newGuest.departure = guest.departure; // Garde la fin originale
+
+                        // Mettre à jour l'ancien pour finir hier
+                        guest.departure = yesterday;
+
+                        if (this.isOnline && guest.firestoreId) {
+                            await window.dbUpdate('guests', guest.firestoreId, { departure: yesterday });
+                            await window.dbAdd('guests', newGuest);
+                        } else {
+                            this.guests.push(newGuest);
+                            this.save();
+                        }
+                    }
+
+                    this.isDragging = false;
+                    this.pendingMove = null;
+                },
+
+                save() {
+                    localStorage.setItem('chalet_guests', JSON.stringify(this.guests));
+                    localStorage.setItem('chalet_absences', JSON.stringify(this.absences));
+                    // Force refresh computed lists if needed (Alpine reactivity handles it usually)
+                },
+
+                resetData() {
+                    if (confirm('Tout effacer ?')) {
+                        this.guests = [];
+                        this.absences = [];
+                        this.save();
+                    }
+                },
+
+                // NAVIGATION DATE
+                prevDay() {
+                    this.viewDate = this.addDaysToDate(this.viewDate, -1);
+                },
+
+                nextDay() {
+                    this.viewDate = this.addDaysToDate(this.viewDate, 1);
+                },
+
+                gotoToday() {
+                    this.viewDate = this.today;
+                },
+
+                // CALENDRIER POPUP
+                openCalendar() {
+                    this.calendarDate = new Date(this.viewDate);
+                    this.showCalendar = true;
+                },
+
+                prevMonth() {
+                    this.calendarDate = new Date(this.calendarDate.setMonth(this.calendarDate.getMonth() - 1));
+                },
+
+                nextMonth() {
+                    this.calendarDate = new Date(this.calendarDate.setMonth(this.calendarDate.getMonth() + 1));
+                },
+
+                selectDate(dateStr) {
+                    this.viewDate = dateStr;
+                    this.showCalendar = false;
+                },
+
+                getCalendarTitle() {
+                    return this.calendarDate.toLocaleDateString('fr-FR', { month: 'long', year: 'numeric' });
+                },
+
+                getCalendarDays() {
+                    const year = this.calendarDate.getFullYear();
+                    const month = this.calendarDate.getMonth();
+
+                    // Premier jour du mois
+                    const firstDay = new Date(year, month, 1);
+                    // Dernier jour du mois
+                    const lastDay = new Date(year, month + 1, 0);
+
+                    // Ajustement pour commencer Lundi (0=Dimanche, 1=Lundi...)
+                    // getDay(): 0=Dim, 1=Lun. On veut 0=Lun, 6=Dim.
+                    let startDay = firstDay.getDay() - 1;
+                    if (startDay === -1) startDay = 6; // Dimanche devient 6
+
+                    const days = [];
+
+                    // Jours vides avant
+                    for (let i = 0; i < startDay; i++) {
+                        days.push({ empty: true });
+                    }
+
+                    // Jours du mois
+                    for (let i = 1; i <= lastDay.getDate(); i++) {
+                        const d = new Date(year, month, i);
+                        const dateStr = d.toISOString().split('T')[0];
+                        days.push({
+                            empty: false,
+                            day: i,
+                            dateStr: dateStr,
+                            isSelected: dateStr === this.viewDate,
+                            isToday: dateStr === this.today
+                        });
+                    }
+
+                    return days;
+                },
+
+                // GESTION INVITÉS
+                async addGuest() {
+                    const name = this.forms.guest.name;
+                    if (!name) return;
+
+                    const guestData = {
+                        id: this.editingId || Date.now(),
+                        name: name,
+                        name2: this.forms.guest.name2 || '',
+                        arrival: this.forms.guest.arrival,
+                        departure: this.forms.guest.departure || null,
+                        room: this.forms.guest.room,
+                        beds: this.forms.guest.isCouple ? 1 : 1, // Logic: couple = 2 linked entries OR 1 entry with weight?
+                        // Ah wait, couple logic is splitting them into 2 entries!
+                    };
+
+                    if (this.editingId) {
+                        // MODE EDITION
+                        const guest = this.guests.find(g => g.id === this.editingId);
+                        if (guest) {
+                            // Update Local Obj
+                            Object.assign(guest, {
+                                name: name, name2: this.forms.guest.name2,
+                                arrival: this.forms.guest.arrival, departure: this.forms.guest.departure || null,
+                                room: this.forms.guest.room,
+                                beds: this.forms.guest.isCouple ? 1 : 1
+                            });
+
+                            if (this.isOnline && guest.firestoreId) {
+                                await window.dbUpdate('guests', guest.firestoreId, guest);
+                            } else {
+                                this.save();
+                            }
+                        }
+                        this.editingId = null;
+                    } else {
+                        // MODE CREATION
+                        // Handle Couple Splitting
+                        if (this.forms.guest.isCouple && this.forms.guest.name2) {
+                            // Create 2 Guests
+                            const g1 = { ...guestData, beds: 1 };
+                            const g2 = { ...guestData, id: Date.now() + 1, name: this.forms.guest.name2, name2: '', beds: 1 };
+
+                            if (this.isOnline) {
+                                await window.dbAdd('guests', g1);
+                                await window.dbAdd('guests', g2);
+                            } else {
+                                this.guests.push(g1);
+                                this.guests.push(g2);
+                                this.save();
+                            }
+                        } else {
+                            // Create 1 Guest
+                            if (this.isOnline) {
+                                await window.dbAdd('guests', guestData);
+                            } else {
+                                this.guests.push(guestData);
+                                this.save();
+                            }
+                        }
+                    }
+
+                    this.modals.guest = false;
+                    this.resetGuestForm();
+                },
+
+                editGuest(guest) {
+                    this.editingId = guest.id;
+                    this.forms.guest.name = guest.name;
+                    this.forms.guest.arrival = guest.arrival;
+                    this.forms.guest.departure = guest.departure || '';
+                    this.forms.guest.room = guest.room;
+                    this.forms.guest.isCouple = (guest.beds > 1);
+
+                    this.modals.profile = false; // Fermer le profil
+                    this.modals.guest = true; // Ouvrir le form
+                },
+
+                resetGuestForm() {
+                    this.forms.guest = { name: '', name2: '', arrival: this.today, departure: '', room: 'Chambre Joëlle', isCouple: false }; // Updated default room to valid one
+                    this.editingId = null;
+                },
+
+                async deleteGuest(id) {
+                    if (!confirm('Supprimer cet invité ?')) return;
+
+                    const guest = this.guests.find(g => g.id === id);
+                    if (!guest) return;
+
+                    if (this.isOnline && guest.firestoreId) {
+                        await window.dbDelete('guests', guest.firestoreId);
+                    } else {
+                        this.guests = this.guests.filter(g => g.id !== id);
+                        this.save(); // Local fallback
+                    }
+
+                    // Also delete linked absences?
+                    // Complex with Firestore query limitations without index. 
+                    // Let's leave orphans or client-side filter for now.
+                    // Or iterate local absences and delete them too?
+                    // Better validation:
+                    const relatedAbsences = this.absences.filter(a => a.guestId === id);
+                    for (const abs of relatedAbsences) {
+                        if (this.isOnline && abs.firestoreId) {
+                            await window.dbDelete('absences', abs.firestoreId);
+                        } else {
+                            // Local delete in next loop or filter
+                        }
+                    }
+                    if (!this.isOnline) {
+                        this.absences = this.absences.filter(a => a.guestId !== id);
+                        this.save();
+                    }
+
+                    this.modals.profile = false;
+                },
+
+                // GESTION ABSENCES
+
+
+                deleteAbsence(index) {
+                    this.absences.splice(index, 1);
+                    this.save();
+                },
+
+                deleteAbsenceByRef(absRef) {
+                    // Trouver l'index dans la liste complète
+                    const index = this.absences.indexOf(absRef);
+                    if (index > -1) {
+                        this.deleteAbsence(index);
+                    }
+                },
+
+                // LOGIQUE METIER & FILTRES
+                isHere(guest, dateStr) {
+                    // Présent si date >= arrivée ET (pas de départ OU date <= départ)
+                    return dateStr >= guest.arrival && (!guest.departure || dateStr <= guest.departure);
+                },
+
+                // AGGREGATION HELPERS (PROFILE)
+                getAllStays(name) {
+                    // Tous les segments de séjour pour ce nom, triés par date
+                    return this.guests
+                        .filter(g => g.name === name)
+                        .sort((a, b) => a.arrival.localeCompare(b.arrival));
+                },
+
+                getGuestTrips(name) {
+                    const rawStays = this.getAllStays(name);
+                    const trips = [];
+
+                    if (rawStays.length === 0) return trips;
+
+                    let currentTrip = {
+                        start: rawStays[0].arrival,
+                        end: rawStays[0].departure,
+                        segments: [rawStays[0]]
+                    };
+
+                    for (let i = 1; i < rawStays.length; i++) {
+                        const segment = rawStays[i];
+                        const prev = currentTrip.segments[currentTrip.segments.length - 1];
+
+                        // Check if contiguous (Prev Departure + 1 day == Next Arrival OR Prev Departure == Next Arrival if we allow same day swap logic change?)
+                        // Current logic: Split sets departure=yesterday, arrival=today. Gap is 1 day.
+                        const expectedArrival = this.addDaysToDate(prev.departure, 1);
+
+                        if (prev.departure && segment.arrival <= expectedArrival) {
+                            // C'est le même séjour (suite)
+                            currentTrip.segments.push(segment);
+                            currentTrip.end = segment.departure; // Update global end
+                        } else {
+                            // C'est un nouveau séjour
+                            trips.push(currentTrip);
+                            currentTrip = {
+                                start: segment.arrival,
+                                end: segment.departure,
+                                segments: [segment]
+                            };
+                        }
+                    }
+                    trips.push(currentTrip);
+                    return trips;
+                },
+
+                getAllFutureAbsences(name) {
+                    // 1. Récupérer tous les IDs liés à ce nom
+                    const guestIds = this.getAllStays(name).map(g => g.id);
+
+                    // 2. Filtrer les absences pour ces IDs ET qui sont futures (>= viewDate ou today ?)
+                    // Le user a dit "a venir", on va dire >= today pour être sûr, ou viewDate ?
+                    // Disons >= today pour le sens "réel", ou aligné sur la vue.
+                    // Allons pour >= viewDate pour la cohérence avec le reste de l'app si on navigue dans le passé.
+                    // Mais "à venir" suggère often "from now". Let's use viewDate aka "Now" in the app context.
+
+                    return this.absences
+                        .filter(a => guestIds.includes(a.guestId) && a.date >= this.today) // "A venir" = Futur Réel
+                        .sort((a, b) => a.date.localeCompare(b.date));
+                },
+
+                openProfile(guest) {
+                    this.selectedGuestName = guest.name; // On track par nom pour l'agrégation
+                    this.modals.profile = true;
+                },
+
+                getAbsentList(type) {
+                    return this.getPresentGuests().filter(g => {
+                        const abs = this.absences.find(a => a.guestId === g.id && a.date === this.viewDate);
+                        if (!abs) return false;
+                        if (type === 'midi' && abs.isMidi) return true;
+                        if (type === 'soir' && abs.isSoir) return true;
+                        return false;
+                    }).map(g => {
+                        const abs = this.absences.find(a => a.guestId === g.id && a.date === this.viewDate);
+                        return { ...g, reason: abs.reason };
+                    });
+                },
+
+                markAbsentFromMeal(guest, type) {
+                    this.resetGuestForm(); // Bon usage de reset
+
+                    // Pre-fill absence form
+                    this.forms.absence.guestId = guest.id;
+                    this.forms.absence.date = this.viewDate;
+                    this.forms.absence.isMidi = (type === 'midi');
+                    this.forms.absence.isSoir = (type === 'soir');
+
+                    this.modals.absence = true;
+                },
+
+                restorePresence(guestId, type) {
+                    // Trouver l'absence correspondante
+                    const index = this.absences.findIndex(a =>
+                        a.guestId === guestId &&
+                        a.date === this.viewDate &&
+                        ((type === 'midi' && a.isMidi) || (type === 'soir' && a.isSoir))
+                    );
+
+                    if (index > -1) {
+                        // Si c'est une absence "mixte" (midi ET soir), on ne supprime que le flag, sauf si c'est le dernier
+                        const abs = this.absences[index];
+                        if (abs.isMidi && abs.isSoir) {
+                            if (type === 'midi') abs.isMidi = false;
+                            if (type === 'soir') abs.isSoir = false;
+                        } else {
+                            // Suppression complète si c'était le seul flag
+                            this.absences.splice(index, 1);
+                        }
+                        this.save();
+                    }
+                },
+
+                // Identification des changements de chambre internes
+                getInternalMoves() {
+                    const moves = [];
+                    // Pour chaque guest, on cherche s'il y a un autre guest (même nom)
+                    // dont l'arrivée correspond à mon départ + 1 jour (ou le jour même selon la logique de split)
+                    // Dans notre logique split: nouveau arrive le jour J, ancien part le jour J-1.
+                    // Donc New.Arrival = Old.Departure + 1 jour.
+
+                    this.guests.forEach(g1 => {
+                        if (!g1.departure) return; // Pas de départ, pas de move possible depuis lui
+
+                        // Chercher le "suite" du séjour
+                        const nextStay = this.guests.find(g2 =>
+                            g2.id !== g1.id &&
+                            g2.name === g1.name &&
+                            g2.arrival === this.addDaysToDate(g1.departure, 1) // Arrive le lendemain du départ
+                        );
+
+                        if (nextStay) {
+                            moves.push({
+                                guest: nextStay, // On track le nouveau segment
+                                date: nextStay.arrival,
+                                fromRoom: g1.room,
+                                toRoom: nextStay.room
+                            });
+                        }
+                    });
+
+                    return moves
+                        .filter(m => m.date >= this.today)
+                        .sort((a, b) => a.date.localeCompare(b.date));
+                },
+
+                cancelMove(move) {
+                    if (!confirm('Voulez-vous vraiment annuler ce changement et remettre la personne dans la chambre initiale ?')) return;
+
+                    const nextStay = move.guest; // Le segment "destination" à supprimer
+
+                    // Trouver le segment précédent (source)
+                    // Il part la veille de l'arrivée du suivant (ou le jour même selon la logique)
+                    // Logique split: arrival du next = departure du prev + 1 jour.
+                    // Donc Departure du prev = arrival du next - 1 jour.
+                    const prevStayDeparture = this.addDaysToDate(nextStay.arrival, -1);
+
+                    const prevStay = this.guests.find(g =>
+                        g.id !== nextStay.id &&
+                        g.name === nextStay.name &&
+                        g.departure === prevStayDeparture
+                    );
+
+                    if (prevStay) {
+                        // 1. Étendre le séjour précédent
+                        prevStay.departure = nextStay.departure; // Il reprend la fin du séjour
+
+                        // 2. Migrer les absences
+                        this.absences.forEach(a => {
+                            if (a.guestId === nextStay.id) {
+                                a.guestId = prevStay.id;
+                            }
+                        });
+
+                        // 3. Supprimer le segment "next"
+                        this.guests = this.guests.filter(g => g.id !== nextStay.id);
+
+                        this.save();
+                    } else {
+                        alert("Impossible de retrouver le séjour précédent automatiquement.");
+                    }
+                },
+
+                // Retourne la liste des gens présents à une date donnée (Mange ou pas)
+                getPresentGuests(dateStr = this.viewDate) {
+                    return this.guests.filter(g => this.isHere(g, dateStr));
+                },
+
+                getGuestsInRoom(roomName) {
+                    return this.getPresentGuests(this.viewDate).filter(g => g.room === roomName);
+                },
+
+                getRoomOccupancy(roomName) {
+                    // Somme des "beds" des occupants
+                    return this.getGuestsInRoom(roomName).reduce((sum, g) => sum + (g.beds || 1), 0);
+                },
+
+                getTotalOccupancy(dateStr = this.viewDate) {
+                    return this.rooms.reduce((sum, room) => sum + this.getRoomOccupancy(room.name), 0);
+                },
+
+                getTotalCapacity() {
+                    return this.rooms.reduce((sum, room) => sum + room.capacity, 0);
+                },
+
+                // Retourne la liste des gens qui mangent et combien ils comptent
+                getMealList(type) { // type = 'midi' ou 'soir'
+                    const present = this.getPresentGuests(this.viewDate);
+
+                    return present.filter(g => {
+                        // Vérifier absence
+                        const abs = this.absences.find(a =>
+                            a.guestId === g.id &&
+                            a.date === this.viewDate
+                        );
+
+                        // Si départ aujourd'hui, pas de repas le soir (sauf si indéfini OU si EXTERNE)
+                        if (type === 'soir' && g.departure === this.viewDate && g.room !== 'EXTERNE') return false;
+
+                        // Si absence signalée
+                        if (abs) {
+                            if (type === 'midi' && abs.isMidi) return false;
+                            if (type === 'soir' && abs.isSoir) return false;
+                        }
+
+                        return true;
+                    });
+                },
+
+                countMeal(type) {
+                    return this.getMealList(type).reduce((sum, g) => sum + (g.beds || 1), 0);
+                },
+
+                // DASHBOARD HELPERS
+                // Arrivées "Réelles" (pas des changements de chambre)
+                getUpcomingArrivals() {
+                    return this.guests
+                        .filter(g => {
+                            if (g.arrival <= this.viewDate) return false;
+
+                            // Check if logic move : Est-ce que cette arrivée est la suite d'un départ hier ?
+                            // Arrival = J. Check s'il y a un départ à J-1 pour le même nom.
+                            const receptionCheck = this.addDaysToDate(g.arrival, -1);
+                            const isContinuation = this.guests.some(other =>
+                                other.id !== g.id &&
+                                other.name === g.name &&
+                                other.departure === receptionCheck
+                            );
+
+                            return !isContinuation;
+                        })
+                        .sort((a, b) => a.arrival.localeCompare(b.arrival));
+                },
+
+                // Départs "Réels" (pas des changements de chambre internal)
+                // C'est à dire, on ne part pas si on revient le lendemain dans une autre chambre
+                getUpcomingDepartures() {
+                    return this.guests
+                        .filter(g => {
+                            // Départ valid et futur proche
+                            if (!g.departure || g.departure < this.viewDate || g.departure > this.addDaysToDate(this.viewDate, 7)) return false;
+
+                            // Check if internal move : Est-ce qu'il y a une arrivée le lendemain (J+1) ?
+                            const nextCheck = this.addDaysToDate(g.departure, 1);
+                            const isMoving = this.guests.some(other =>
+                                other.id !== g.id &&
+                                other.name === g.name &&
+                                other.arrival === nextCheck
+                            );
+
+                            return !isMoving;
+                        })
+                        .sort((a, b) => a.departure.localeCompare(b.departure));
+                },
+
+                // UTILITAIRES
+                formatDate(dateStr) {
+                    if (!dateStr) return 'Indéfini';
+                    const options = { day: 'numeric', month: 'short' };
+                    return new Date(dateStr).toLocaleDateString('fr-FR', options);
+                },
+
+                daysUntil(dateStr) {
+                    if (!dateStr) return "∞";
+                    const diff = new Date(dateStr) - new Date(this.viewDate);
+                    const days = Math.ceil(diff / (1000 * 60 * 60 * 24));
+                    if (days === 0) return "";
+                    if (days === 1) return "Demain";
+                    if (days < 0) return "Passé";
+                    return `J+${days}`;
+                },
+
+                addDaysToDate(baseDate, days) {
+                    let result = new Date(baseDate);
+                    result.setDate(result.getDate() + days);
+                    return result.toISOString().split('T')[0];
+                },
+
+                getGuestName(id) {
+                    const g = this.guests.find(x => x.id === id);
+                    return g ? g.name : 'Inconnu';
+                },
+
+                openModal(type) {
+                    if (type === 'mealGuest') this.resetMealGuestForm();
+                    this.modals[type] = true;
+                }
+            }
+        }
+    </script>
+</body>
+
+</html>
