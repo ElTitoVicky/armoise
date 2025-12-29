@@ -511,24 +511,25 @@
             <h3 class="text-xl font-bold mb-4">Nouvelle Arrivée</h3>
             <div class="space-y-4">
                 <input x-model="forms.guest.name" type="text" placeholder="Prénom"
-                    class="w-full bg-gray-800 border-none rounded-lg p-3 text-white">
+                    class="w-full bg-gray-700 border border-gray-600 rounded-lg p-3 text-white focus:border-yellow-500 focus:outline-none">
 
                 <div class="grid grid-cols-2 gap-2">
                     <div>
                         <label class="text-xs text-gray-500 ml-1">Arrivée</label>
                         <input x-model="forms.guest.arrival" type="date"
-                            class="w-full bg-gray-800 border-none rounded-lg p-3 text-white">
+                            class="w-full bg-gray-700 border border-gray-600 rounded-lg p-3 text-white focus:border-yellow-500 focus:outline-none">
                     </div>
                     <div>
                         <label class="text-xs text-gray-500 ml-1">Départ (Optionnel)</label>
                         <input x-model="forms.guest.departure" type="date"
-                            class="w-full bg-gray-800 border-none rounded-lg p-3 text-white">
+                            class="w-full bg-gray-700 border border-gray-600 rounded-lg p-3 text-white focus:border-yellow-500 focus:outline-none">
                     </div>
                 </div>
 
                 <div>
                     <label class="text-xs text-gray-500 ml-1">Chambre</label>
-                    <select x-model="forms.guest.room" class="w-full bg-gray-800 border-none rounded-lg p-3 text-white">
+                    <select x-model="forms.guest.room"
+                        class="w-full bg-gray-700 border border-gray-600 rounded-lg p-3 text-white focus:border-yellow-500 focus:outline-none">
                         <template x-for="room in rooms" :key="room.name">
                             <option :value="room.name" x-text="room.name"></option>
                         </template>
@@ -543,7 +544,7 @@
 
                 <div x-show="forms.guest.isCouple" x-transition>
                     <input x-model="forms.guest.name2" type="text" placeholder="Prénom du conjoint"
-                        class="w-full bg-gray-800 border-none rounded-lg p-3 text-white mt-4 border-l-4 border-yellow-500">
+                        class="w-full bg-gray-700 border border-gray-600 rounded-lg p-3 text-white mt-4 border-l-4 border-l-yellow-500 focus:border-yellow-500 focus:outline-none">
                 </div>
 
                 <div class="flex gap-2 mt-6">
@@ -694,7 +695,7 @@
                 <div>
                     <label class="text-xs text-gray-500 ml-1">Qui est absent ?</label>
                     <select x-model="forms.absence.guestId"
-                        class="w-full bg-gray-800 border-none rounded-lg p-3 text-white">
+                        class="w-full bg-gray-700 border border-gray-600 rounded-lg p-3 text-white focus:border-blue-500 focus:outline-none">
                         <option value="">Choisir une personne...</option>
                         <template x-for="guest in getPresentGuests()" :key="guest.id">
                             <option :value="guest.id" x-text="guest.name + (guest.beds > 1 ? ' (Couple)' : '')">
@@ -705,12 +706,12 @@
                 <div>
                     <label class="text-xs text-gray-500 ml-1">Quelle date ?</label>
                     <input x-model="forms.absence.date" type="date"
-                        class="w-full bg-gray-800 border-none rounded-lg p-3 text-white">
+                        class="w-full bg-gray-700 border border-gray-600 rounded-lg p-3 text-white focus:border-blue-500 focus:outline-none">
                 </div>
                 <div>
                     <label class="text-xs text-gray-500 ml-1">Raison (Optionnel)</label>
                     <input x-model="forms.absence.reason" type="text" placeholder="Ex: Rando, Alpage..."
-                        class="w-full bg-gray-800 border-none rounded-lg p-3 text-white">
+                        class="w-full bg-gray-700 border border-gray-600 rounded-lg p-3 text-white focus:border-blue-500 focus:outline-none">
                 </div>
                 <div class="flex gap-4 p-2">
                     <label class="flex items-center gap-2 cursor-pointer">
@@ -754,12 +755,12 @@
             <h3 class="text-xl font-bold mb-4">Invité Repas (Externe)</h3>
             <div class="space-y-4">
                 <input x-model="forms.mealGuest.name" type="text" placeholder="Nom de l'invité"
-                    class="w-full bg-gray-800 border-none rounded-lg p-3 text-white">
+                    class="w-full bg-gray-700 border border-gray-600 rounded-lg p-3 text-white focus:border-blue-500 focus:outline-none">
 
                 <div>
                     <label class="text-xs text-gray-500 ml-1">Date</label>
                     <input x-model="forms.mealGuest.date" type="date"
-                        class="w-full bg-gray-800 border-none rounded-lg p-3 text-white">
+                        class="w-full bg-gray-700 border border-gray-600 rounded-lg p-3 text-white focus:border-blue-500 focus:outline-none">
                 </div>
 
                 <div class="flex gap-4">
@@ -908,7 +909,7 @@
                 forms: {
                     guest: { name: '', name2: '', arrival: '', departure: '', room: 'Chambre Bleue', isCouple: false },
                     absence: { guestId: '', date: '', isMidi: false, isSoir: false, reason: '' },
-                    mealGuest: { name: '', date: '', isMidi: true, isSoir: true }
+                    mealGuest: { name: '', date: '', isMidi: false, isSoir: false }
                 },
 
                 init() {
@@ -1040,8 +1041,8 @@
                     this.forms.mealGuest = {
                         name: '',
                         date: this.viewDate,
-                        isMidi: true,
-                        isSoir: true
+                        isMidi: false,
+                        isSoir: false
                     };
                 },
 
@@ -1693,7 +1694,7 @@
                         if (type === 'midi' && abs.isMidi) return true;
                         if (type === 'soir' && abs.isSoir) return true;
                         return false;
-                    }).map(g => {
+                    }).filter(g => g.room !== 'EXTERNE').map(g => {
                         const abs = this.absences.find(a => a.guestId === g.id && a.date === this.viewDate);
                         return { ...g, reason: abs.reason };
                     });
@@ -1935,6 +1936,9 @@
                         .filter(g => {
                             // Départ valid et futur proche
                             if (!g.departure || g.departure < this.viewDate || g.departure > this.addDaysToDate(this.viewDate, 7)) return false;
+
+                            // Exclure les invités "Repas Seul" (EXTERNE)
+                            if (g.room === 'EXTERNE') return false;
 
                             // Check if internal move : Est-ce qu'il y a une arrivée le lendemain (J+1) ?
                             const nextCheck = this.addDaysToDate(g.departure, 1);
